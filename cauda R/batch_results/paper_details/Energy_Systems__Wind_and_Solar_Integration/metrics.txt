@@ -1,0 +1,5 @@
+Paper: Energy Systems: Wind and Solar Integration
+F1-score: 0.857
+Composite: 0.914
+Ready: TRUE
+High-conf: 6, Medium: 0, Low: 1

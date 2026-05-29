@@ -1,0 +1,26 @@
+Package: cauda
+Title: CAUDA - Causal Automated Directed Acyclic Graph Extractor
+Version: 1.0.0
+Date: 2026-05-29
+Authors@R: c(
+  person("Aadi", "Soni", email = "mr.aadi.soni@gmail.com", role = c("aut", "cre")),
+  person("Professor", "Cox", role = "aut")
+)
+Maintainer: Aadi Soni <mr.aadi.soni@gmail.com>
+Description: Enterprise-grade system for extracting causal relationships from
+    academic papers, building directed acyclic graphs (DAGs), evaluating
+    extraction quality with advanced statistical metrics, and providing
+    publication-ready visualizations. Includes classical data analysis capabilities
+    (correlation, causal learning, optimization) plus modern paper analysis with
+    confidence-aware DAGs and quality assurance.
+Depends: R (>= 4.0)
+Imports:
+    bnlearn,
+    igraph,
+    ggplot2,
+    gridExtra,
+    reshape2,
+    parallel
+License: MIT
+LazyData: true
+RoxygenNote: 7.1.1

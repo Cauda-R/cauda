@@ -1,0 +1,8 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"PyWakePretraining","FineTuningPerformance","causal_effect",NA,"positive","high","high",TRUE,"PyWakePretraining → FineTuningPerformance"
+"TransferLearning","DataRequirementReduction","causal_effect",NA,"positive","high","high",TRUE,"TransferLearning → DataRequirementReduction"
+"LatentRepresentations","GeneralizationAcrossLayouts","causal_effect",NA,"positive","high","high",TRUE,"LatentRepresentations → GeneralizationAcrossLayouts"
+"LayoutRepresentation","InteractionCapture","causal_effect",NA,"positive","high","high",TRUE,"LayoutRepresentation → InteractionCapture"
+"GNNArchitecture","DELPrediction","causal_effect",NA,"positive","high","high",TRUE,"GNNArchitecture → DELPrediction"
+"WindDirectionInput","WakePrediction","causal_effect",NA,"positive","high","high",TRUE,"WindDirectionInput → WakePrediction"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"

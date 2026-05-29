@@ -1,0 +1,6 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"TurbineSpacing","SpatialGeometry","causal_effect",NA,"positive","high","high",TRUE,"TurbineSpacing → SpatialGeometry"
+"WindDirection","AtmosphericStability","causal_effect",NA,"positive","high","high",TRUE,"WindDirection → AtmosphericStability"
+"TurbineSpacing","AerodynamicInteraction","causal_effect",NA,"positive","high","high",TRUE,"TurbineSpacing → AerodynamicInteraction"
+"WindDirection","WakeInteraction","causal_effect",NA,"positive","high","high",TRUE,"WindDirection → WakeInteraction"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"

@@ -1,0 +1,5 @@
+Paper: Wind Turbine Efficiency
+F1-score: 0.889
+Composite: 0.933
+Ready: TRUE
+High-conf: 4, Medium: 0, Low: 1

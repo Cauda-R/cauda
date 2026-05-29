@@ -1,0 +1,6 @@
+Job: wind_energy_integrated
+Created: 2026-05-29 13:03:35.526709
+Completed: 2026-05-29 13:03:35.663482
+Mode: mock_realistic
+Papers: 11 processed, 11 ready
+Time: 0.1 seconds

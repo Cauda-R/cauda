@@ -1,0 +1,5 @@
+Paper: Minimal Wind Farm Analysis
+F1-score: 0.800
+Composite: 0.880
+Ready: TRUE
+High-conf: 2, Medium: 0, Low: 1

@@ -1,0 +1,7 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"YawControl","PowerOutput","causal_effect",NA,"positive","high","high",TRUE,"YawControl → PowerOutput"
+"OperatingRegime","PredictionUncertainty","causal_effect",NA,"positive","high","high",TRUE,"OperatingRegime → PredictionUncertainty"
+"ControlStrategy","EconomicOutcome","causal_effect",NA,"positive","high","high",TRUE,"ControlStrategy → EconomicOutcome"
+"WakeIntensity","StructuralLoads","causal_effect",NA,"positive","high","high",TRUE,"WakeIntensity → StructuralLoads"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"
+"Noise2","Var2","causal_effect",NA,"positive","low","low",FALSE,"Noise2 → Var2"

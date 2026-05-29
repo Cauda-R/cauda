@@ -1,0 +1,6 @@
+Job: wind_production_v2
+Created: 2026-05-29 12:08:20.578757
+Completed: 2026-05-29 12:08:20.619629
+Mode: mock_realistic
+Papers: 11 processed, 11 ready
+Time: 0.0 seconds

@@ -1,0 +1,6 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"WindDirection","WakeIntensity","causal_effect",NA,"positive","high","high",TRUE,"WindDirection → WakeIntensity"
+"YawControl","PowerOutput","causal_effect",NA,"positive","high","high",TRUE,"YawControl → PowerOutput"
+"PowerOutput","ControlStrategy","causal_effect",NA,"positive","high","high",TRUE,"PowerOutput → ControlStrategy"
+"WakeEffects","PowerReduction","causal_effect",NA,"positive","high","high",TRUE,"WakeEffects → PowerReduction"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"

@@ -1,0 +1,8 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"GridStability","GeneratorResponse","causal_effect",NA,"positive","high","high",TRUE,"GridStability → GeneratorResponse"
+"BatteryStorage","VariabilityMitigation","causal_effect",NA,"positive","high","high",TRUE,"BatteryStorage → VariabilityMitigation"
+"WakeEffects","WindPowerReduction","causal_effect",NA,"positive","high","high",TRUE,"WakeEffects → WindPowerReduction"
+"PanelDegradation","SolarPowerReduction","causal_effect",NA,"positive","high","high",TRUE,"PanelDegradation → SolarPowerReduction"
+"CloudCover","SolarPower","causal_effect",NA,"positive","high","high",TRUE,"CloudCover → SolarPower"
+"Forecasting","IntegrationQuality","causal_effect",NA,"positive","high","high",TRUE,"Forecasting → IntegrationQuality"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"

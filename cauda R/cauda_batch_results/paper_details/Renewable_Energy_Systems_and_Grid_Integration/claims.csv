@@ -1,0 +1,6 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"TransferLearning","FieldDataAccuracy","causal_effect",NA,"positive","high","high",TRUE,"TransferLearning → FieldDataAccuracy"
+"AerodynamicInterference","StructuralLoads","causal_effect",NA,"positive","high","high",TRUE,"AerodynamicInterference → StructuralLoads"
+"TurbineSpacing","DownstreamFatigue","causal_effect",NA,"positive","high","high",TRUE,"TurbineSpacing → DownstreamFatigue"
+"WakeEffects","PowerLoss","causal_effect",NA,"positive","high","high",TRUE,"WakeEffects → PowerLoss"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"

@@ -1,0 +1,56 @@
+================================================================================
+COPY THESE 3 FILES TO YOUR MACHINE
+================================================================================
+
+From: /mnt/project/
+To:   ~/Downloads/ML Projects/cauda R/
+
+FILES TO COPY:
+  1. cauda-extract.R      (extraction functions)
+  2. test-extract.R       (test harness)
+  3. demo-extract.R       (usage examples)
+
+That's it! Just 3 files. Everything else stays where it is.
+
+================================================================================
+FOLDER STRUCTURE AFTER COPYING
+================================================================================
+
+~/Downloads/ML Projects/cauda R/
+  ├── cauda.R                  (existing, unchanged)
+  ├── cauda-docs.R             (existing, unchanged)
+  ├── cauda-package.R          (existing, unchanged)
+  ├── cauda_tests.R            (existing, unchanged)
+  │
+  ├── cauda-extract.R          ← COPY THIS
+  ├── test-extract.R           ← COPY THIS
+  ├── demo-extract.R           ← COPY THIS
+  │
+  ├── R/                        (existing folder)
+  ├── vignettes/                (existing folder)
+  ├── TelcoChurn.csv            (existing file)
+  └── ... other files
+
+================================================================================
+AFTER COPYING - QUICK TEST
+================================================================================
+
+In R:
+
+setwd("~/Downloads/ML Projects/cauda R")
+source("cauda.R")
+source("cauda-extract.R")
+source("test-extract.R")
+smoke_test()
+
+Should complete in 5 seconds.
+
+================================================================================
+THAT'S ALL YOU NEED TO GET STARTED
+
+The 3 files are self-contained attachments.
+They don't modify or depend on cauda.
+You can use them or ignore them - your choice.
+
+Good luck!
+================================================================================

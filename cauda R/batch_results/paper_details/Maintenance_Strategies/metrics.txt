@@ -1,0 +1,5 @@
+Paper: Maintenance Strategies
+F1-score: 0.800
+Composite: 0.880
+Ready: TRUE
+High-conf: 4, Medium: 0, Low: 2

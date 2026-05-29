@@ -1,0 +1,6 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"SCADAData","AdaptiveStrategy","causal_effect",NA,"positive","high","high",TRUE,"SCADAData → AdaptiveStrategy"
+"CoordinatedControl","WakeMitigation","causal_effect",NA,"positive","high","high",TRUE,"CoordinatedControl → WakeMitigation"
+"YawControl","DownstreamEffects","causal_effect",NA,"positive","high","high",TRUE,"YawControl → DownstreamEffects"
+"WindDirectionConsensus","ControlEffectiveness","causal_effect",NA,"positive","high","high",TRUE,"WindDirectionConsensus → ControlEffectiveness"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"

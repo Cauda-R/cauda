@@ -1,0 +1,5 @@
+Paper: Indirect Effects in Wind Farms
+F1-score: 0.727
+Composite: 0.836
+Ready: TRUE
+High-conf: 4, Medium: 0, Low: 2

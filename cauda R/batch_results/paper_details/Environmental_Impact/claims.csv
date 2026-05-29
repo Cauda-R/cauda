@@ -1,0 +1,7 @@
+"source","target","claim_type","pathway","direction","strength","confidence","established","quote"
+"Wind Speed","Power Output","causal_effect",NA,"positive","high","high",TRUE,"Wind Speed → Power Output"
+"Turbine Design","Power Output","causal_effect",NA,"positive","high","high",TRUE,"Turbine Design → Power Output"
+"Blade Pitch","Power Output","causal_effect",NA,"positive","high","high",TRUE,"Blade Pitch → Power Output"
+"Generator","Electrical Power","causal_effect",NA,"positive","high","high",TRUE,"Generator → Electrical Power"
+"Noise1","Var1","causal_effect",NA,"positive","low","low",FALSE,"Noise1 → Var1"
+"Noise2","Var2","causal_effect",NA,"positive","low","low",FALSE,"Noise2 → Var2"
