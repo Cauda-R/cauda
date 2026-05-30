@@ -1,0 +1,212 @@
+---
+title: "Getting Started with cauda"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with cauda}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Overview
+
+**cauda** (Causal Automated Unified Data Analysis) is a high-level R toolkit for exploratory causal data analysis. Given any tabular data frame, cauda automatically answers the question:
+
+> *"What variables appear to drive the outcomes in this dataset, and how do the outcomes depend on those drivers?"*
+
+The package combines automated causal discovery, interactive graph editing, correlation analysis, machine learning-based visualizations, and decision optimization into a single consistent interface.
+
+---
+
+## Installation
+
+```{r install, eval = FALSE}
+# Install from local source
+devtools::install("path/to/cauda R")
+
+# Load the package
+library(cauda)
+```
+
+---
+
+## Quick Start
+
+The fastest way to get a full analysis is with a single command:
+
+```{r quickstart}
+library(cauda)
+
+# Load any data frame
+df <- read.csv("your_data.csv", stringsAsFactors = FALSE)
+
+# Run the full pipeline
+results <- cauda.analyze(df, highlight = "YourTarget")
+```
+
+This automatically runs missing value checks, recodes and cleans the data, learns a causal network, and produces correlation visualizations — all in one shot.
+
+---
+
+## Step-by-Step Walkthrough
+
+We demonstrate cauda using the **TelcoChurn** dataset, which contains customer information for a telecom company. The goal is to understand what drives customer churn.
+
+### Step 1 — Check for missing values
+
+Before doing anything, inspect the raw data:
+
+```{r missing}
+df <- read.csv("TelcoChurn.csv", stringsAsFactors = FALSE)
+cauda.missing(df)
+```
+
+This prints a table showing how many missing values each variable has and flags any variables above the 5% threshold.
+
+### Step 2 — Prep the data
+
+`cauda.prep()` handles all data wrangling automatically:
+
+```{r prep}
+df_ready <- cauda.prep(df)
+```
+
+Under the hood this:
+
+- Recodes character variables (Yes/No → 1/0, Male/Female → 1/0, multi-level factors → integers)
+- Drops high-cardinality columns like customer IDs
+- Removes near-zero variance columns
+- Drops highly correlated redundant columns
+- Handles missing values
+
+### Step 3 — Learn a causal network
+
+```{r dag}
+dag <- cauda.dag(df_ready, highlight = "Churn")
+```
+
+This uses the Hill-Climbing algorithm from `bnlearn` to automatically discover a directed acyclic graph (DAG) showing dependency relationships between variables. The target variable (`Churn`) is highlighted in red.
+
+### Step 4 — Edit the network
+
+The automatically discovered DAG can be refined using domain knowledge:
+
+```{r edit}
+# Remove an arrow that doesn't make causal sense
+dag <- cauda.delete(dag, "Churn", "VoiceMailPlan", highlight = "Churn")
+
+# Flip an arrow direction
+dag <- cauda.flip(dag, "Churn", "InternationalPlan", highlight = "Churn")
+
+# Add a new arrow
+dag <- cauda.add(dag, "tenure", "TotalRevenue", highlight = "Churn")
+```
+
+Each command replots the DAG automatically so you can see the change.
+
+### Step 5 — Correlation analysis
+
+View pairwise and partial correlations side by side:
+
+```{r corr}
+# Full correlation heatmap + spring network
+cauda.corr(df_ready, highlight = "Churn")
+
+# Partial correlation network (controls for other variables)
+cauda.pcorr(df_ready, highlight = "Churn")
+```
+
+Partial correlations are particularly useful — they show the relationship between two variables *after* removing the influence of all other variables, which is much closer to actual causal signal.
+
+### Step 6 — Consensus causal network
+
+Run multiple causal discovery algorithms and see where they agree:
+
+```{r consensus}
+cauda.consensus(df_ready, highlight = "Churn")
+```
+
+Thicker, darker arrows indicate more algorithms agreed on that dependency. This gives a sense of which relationships are robust versus which are algorithm-specific.
+
+### Step 7 — Visualize feature effects
+
+Use partial dependence plots to see how individual features affect the outcome:
+
+```{r pdp}
+# How does tenure affect churn probability?
+cauda.pdp(df_ready, target = "Churn", feature = "tenure", method = "pdp")
+
+# ICE plot — shows individual-level variation
+cauda.pdp(df_ready, target = "Churn", feature = "tenure", method = "ice")
+
+# 2D PDP — how do tenure and Contract interact?
+cauda.pdp2d(df_ready, target = "Churn", feature1 = "tenure", feature2 = "Contract")
+```
+
+### Step 8 — Conditional independence tests
+
+Test which variables are genuinely dependent on the target after controlling for everything else:
+
+```{r independence}
+cauda.independence(df_ready, target = "Churn")
+```
+
+A low p-value means the variable is genuinely associated with Churn even after controlling for all other variables.
+
+### Step 9 — Decision optimization
+
+Find the optimal settings for controllable variables to minimize or maximize an outcome:
+
+```{r optimize}
+cauda.optimize(
+  df_ready,
+  target     = "Churn",
+  controls   = c("tenure", "Contract", "TechSupport"),
+  actionable = c("Contract", "TechSupport"),  # tenure is not actionable
+  maximize   = FALSE
+)
+```
+
+The `actionable` argument distinguishes variables you can actually intervene on (like contract type) from descriptive variables you cannot control (like how long someone has been a customer).
+
+---
+
+## Key Findings on TelcoChurn
+
+Running the full cauda pipeline on TelcoChurn reveals several actionable insights:
+
+- **Contract type** is the strongest protective factor against churn — customers on two-year contracts churn at dramatically lower rates than month-to-month customers
+- **Tech support** and **online security** significantly reduce churn when present
+- **Tenure** is strongly negatively correlated with churn — newer customers are the highest risk group
+- **International plan** and **customer service calls** are the strongest positive predictors of churn
+- **Gender** is completely isolated in the causal network — it has no dependency relationship with any other variable
+
+---
+
+## Function Reference
+
+| Function | Description |
+|----------|-------------|
+| `cauda.missing(df)` | Summarize missing values |
+| `cauda.recode(df)` | Recode character variables to numeric |
+| `cauda.clean(df)` | Remove uninformative/redundant columns |
+| `cauda.prep(df)` | Recode + clean in one step |
+| `cauda.dag(df, highlight)` | Learn and plot causal DAG |
+| `cauda.add(dag, x, y)` | Add arrow to DAG |
+| `cauda.delete(dag, x, y)` | Delete arrow from DAG |
+| `cauda.flip(dag, x, y)` | Flip arrow direction in DAG |
+| `cauda.corr(df, highlight)` | Correlation heatmap + network |
+| `cauda.pcorr(df, highlight)` | Partial correlation network |
+| `cauda.consensus(df, highlight)` | Consensus DAG across algorithms |
+| `cauda.pdp(df, target, feature)` | PDP / ICE / ALE plots |
+| `cauda.pdp2d(df, target, f1, f2)` | 2D partial dependence plot |
+| `cauda.optimize(df, target, controls)` | Decision optimization |
+| `cauda.independence(df, target)` | Conditional independence tests |
+| `cauda.analyze(df, highlight)` | Full pipeline in one command |
