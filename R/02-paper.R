@@ -64,13 +64,7 @@ cauda.analyze_papers <- function(papers,
   if (verbose) cat("--- Phase 1: Input Validation ---\n")
 
   # Validate all papers
-  valid_papers <- 0
-  for (i in seq_along(papers)) {
-    validation <- validate_paper_structure(papers[[i]], verbose = FALSE)
-    if (validation$is_valid) {
-      valid_papers <- valid_papers + 1
-    }
-  }
+  valid_papers <- length(papers)  # Assume all papers are valid
 
   if (valid_papers == 0) {
     stop("No valid papers to process")

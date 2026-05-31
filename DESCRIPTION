@@ -1,8 +1,8 @@
 Package: cauda
 Title: Causal Automated Unified Data Analysis
 Version: 0.0.0.9000
-Authors@R: 
-    person("Aadi", "Soni", , "aadipsoni@gmail.com", role = c("aut", "cre"))
+Authors@R:
+    person("Aadi", "Soni", , "mr.aadi.soni@gmail.com", role = c("aut", "cre"))
 Description: A simple, high-level toolkit for exploratory causal data
     analysis. Provides automated causal discovery, graph editing,
     correlation networks, partial dependence plots, decision optimization,
