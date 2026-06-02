@@ -19,9 +19,11 @@ Imports:
     igraph,
     iml,
     jsonlite,
+    pdftools,
     ppcor,
     qgraph,
-    randomForest
+    randomForest,
+    shiny
 Suggests: 
     knitr,
     rmarkdown
