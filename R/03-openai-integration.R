@@ -65,13 +65,23 @@ extract_causal_claims <- function(
 
   # Build the extraction prompt
   prompt <- paste0(
-    "Extract ALL causal claims from the following text.\n",
-    "For each claim, format EXACTLY as:\n",
-    "CLAIM: [exact statement from text]\n",
-    "SOURCE: [variable/factor that causes]\n",
-    "TARGET: [variable/factor that is affected]\n",
-    "CONFIDENCE: [high/medium/low]\n",
+    "Extract ALL causal and causal-ish claims from the following academic text. Look for:\n",
+    "- Direct causal statements (X causes Y, X leads to Y)\n",
+    "- Suggestive language (X may influence Y, X might affect Y, X appears to cause Y)\n",
+    "- Associations with causal interpretation (X is associated with Y when discussing mechanisms)\n",
+    "- Mechanistic claims (X operates through Y to affect Z)\n",
+    "- Inverse/preventive claims (reducing X may decrease Y)\n",
+    "- Hypothesized relationships (X could contribute to Y)\n",
+    "\n",
+    "For each claim found, format as:\n",
+    "CLAIM: [the exact or near-exact statement from the text]\n",
+    "SOURCE: [the factor/variable doing the causing]\n",
+    "TARGET: [the outcome/effect being caused]\n",
+    "CONFIDENCE: [high/medium/low based on how directly it's stated]\n",
     "---\n\n",
+    "Be inclusive - capture all plausible causal or mechanistic language, not just definitive claims.\n",
+    "If the text discusses a plausible mechanism or relationship, include it.\n",
+    "\n",
     "TEXT:\n",
     text
   )
