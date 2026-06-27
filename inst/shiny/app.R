@@ -1,6 +1,5 @@
 library(shiny)
-library(cauda)
-library(pdftools)
+# cauda and pdftools are loaded in global.R (which also handles shinyapps.io install)
 
 ui <- fluidPage(
   titlePanel("Cauda - Extract Causal Claims & Generate DAGs"),
