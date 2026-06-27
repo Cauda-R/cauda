@@ -62,9 +62,9 @@
 #' @importFrom jsonlite toJSON fromJSON
 cauda.extract <- function(
   text,
-  model = "gpt-3.5-turbo",
+  model = "gpt-4-turbo",
   temperature = 0.3,
-  max_tokens = 2000,
+  max_tokens = 4000,
   return_raw_text = FALSE,
   verbose = TRUE
 ) {
@@ -82,99 +82,133 @@ cauda.extract <- function(
          "Set in .Renviron or via: Sys.setenv(OPENAI_API_KEY = 'sk-...')")
   }
 
-  # Truncate text to reduce token usage and avoid rate limits
-  # GPT-3.5-turbo: 1 character ≈ 1 token; reserve 1000 for response
-  max_text_chars <- 8000
+  # GPT-4-turbo has 128k token context
+  # Estimate: 1 character ≈ 1.3 tokens
+  # Reserve 30k tokens for prompt + response, use ~70k for text
+  max_text_chars <- 60000
   if (nchar(text) > max_text_chars) {
     text <- substr(text, 1, max_text_chars)
-    if (verbose) {
-      message(sprintf("Text truncated to %d characters to optimize token usage", max_text_chars))
-    }
+    message(sprintf("Text truncated to %d characters (GPT-4-turbo limit)", max_text_chars))
   }
 
-  # Build CONCISE extraction prompt (optimized for token efficiency)
+  # Build advanced extraction prompt for GPT-4 with examples
   prompt <- paste0(
-    "Extract causal claims from this academic text. For each claim output:\n",
-    "CLAIM: [specific statement with numbers/evidence]\n",
-    "SOURCE: [cause/independent variable]\n",
-    "TARGET: [effect/dependent variable]\n",
-    "TYPE: [causal_effect/mechanism/conditional/dose-response]\n",
-    "CONFIDENCE: [high/medium/low] based on evidence quality\n",
-    "EFFECT_SIZE: [e.g., β=0.45, d=1.2, or 'unclear']\n",
-    "P_VALUE: [e.g., p<0.001 or 'unreported']\n",
-    "SAMPLE_SIZE: [N value or 'unreported']\n",
-    "PATHWAY: [behavioral/physiological/structural/common_liability/unknown]\n",
-    "ESTABLISHED: [true if strong evidence, false if preliminary]\n",
+    "You are a world-class causal inference expert reviewing academic research.\n",
+    "Extract ONLY the novel, specific, high-quality causal claims this paper contributes.\n\n",
+
+    "DEFINITION OF GOOD CLAIMS:\n",
+    "✓ Novel findings specific to THIS paper (not textbook knowledge)\n",
+    "✓ Based on actual data/results (not speculation or background)\n",
+    "✓ From Results/Discussion sections with empirical support\n",
+    "✓ Includes magnitude/direction (X increases Y by 30%, X → Y p<0.01)\n",
+    "✓ Mechanistic specificity (not just 'X affects Y')\n",
+    "✓ Properly qualified (conditional on Z, under conditions C)\n\n",
+
+    "DEFINITION OF BAD CLAIMS (REJECT THESE):\n",
+    "✗ Generic textbook statements ('Stress affects health')\n",
+    "✗ Background knowledge appearing in introduction\n",
+    "✗ Vague unsupported claims from abstract\n",
+    "✗ 'X is important' without specific causal mechanism\n",
+    "✗ Obvious or trivial relationships\n",
+    "✗ Speculation not grounded in data\n\n",
+
+    "EXAMPLES OF HIGH-QUALITY CLAIMS:\n",
+    "1. SOURCE: Sleep deprivation (hours/night) | TARGET: Error rate (%) | EVIDENCE: Each hour lost increases errors 12%, 95%CI[8-16], N=284 | PATHWAY: behavioral\n",
+    "2. SOURCE: Maternal stress (cortisol ng/ml) | TARGET: Birth weight (g) | TYPE: conditional | EVIDENCE: Effect significant only in 3rd trimester, β=-45, p=0.003 | PATHWAY: physiological\n",
+    "3. SOURCE: Social isolation | TARGET: Depression symptoms | TYPE: mechanism | EVIDENCE: Mediated through reduced BDNF, indirect effect b=0.34, p<0.001 | PATHWAY: common_liability\n",
+    "4. SOURCE: Treatment A vs Control | TARGET: Survival (months) | TYPE: causal_effect | EVIDENCE: Hazard ratio=0.58 [0.42-0.79], p<0.001, N=412 RCT | PATHWAY: structural\n",
+    "5. SOURCE: Physical activity (hours/week) | TARGET: Cognitive decline risk | TYPE: dose-response | EVIDENCE: Each 5 hrs/week activity reduces risk 8%, linear trend p=0.02, 10-year follow-up | PATHWAY: behavioral\n\n",
+
+    "CONFIDENCE CALIBRATION — assign varied levels, do NOT default everything to 'medium':\n",
+    "HIGH: Controlled experiment (RCT or equivalent) + p<0.05 (ideally Bonferroni/FDR corrected) + large effect (Cohen's d≥0.8, OR≥2.5, HR≤0.6, or r≥0.5) + outcome directly measured + plausible mechanism. N≥30 is sufficient if effect is very large.\n",
+    "  → Example HIGH: RCT, N=37, d=1.27, p_bonf=0.0002, outcome directly measured across 3 timepoints\n",
+    "  → Example HIGH: RCT, N=120, HR=0.52, p<0.001, replicated across subgroups\n",
+    "MEDIUM: RCT/experiment + p<0.05 + moderate effect (d=0.3–0.8), OR observational with strong controls + large effect + p<0.05, OR some experimental uncertainty (borderline N, single timepoint).\n",
+    "  → Example MEDIUM: RCT, N=37, d=0.70, p=0.022, single post measurement, mechanism unclear\n",
+    "  → Example MEDIUM: Observational, N=500, OR=2.1, p<0.001, well-controlled\n",
+    "LOW: Any of these: p>0.05, OR p unreported, OR indirect/mediation-only effect (direct effect not significant), OR small effect (d<0.3), OR observational with poor controls, OR exploratory/post-hoc, OR N<20, OR animal/in-vitro only.\n",
+    "  → Example LOW: Mediation, indirect a×b=-0.94 but direct effect p=0.785 (not significant)\n",
+    "  → Example LOW: Correlation r=0.18, p=0.09, no controls\n",
+    "  → Example LOW: Post-hoc subgroup, N=12, d=0.4, not pre-registered\n\n",
+
+    "PATHWAY CLASSIFICATION:\n",
+    "- gateway: Initial causal event that triggers cascade\n",
+    "- common_liability: Shared genetic/environmental cause of both X and Y\n",
+    "- structural: Institutional/systemic mechanism\n",
+    "- behavioral: Behavioral pathway (learning, habituation, etc)\n",
+    "- physiological: Biological/medical mechanism\n",
+    "- unknown: Mechanism unclear from paper\n\n",
+
+    "FOR EACH CLAIM, output EXACTLY this format (separated by ----):\n",
+    "CLAIM: [exact statement from paper with specificity, e.g., 'A increases B by 20%, p<0.01']\n",
+    "SOURCE: [independent variable / cause]\n",
+    "TARGET: [dependent variable / effect]\n",
+    "TYPE: [causal_effect / mechanism / conditional / dose-response / other]\n",
+    "CONFIDENCE: [high / medium / low]\n",
+    "EFFECT_SIZE: [e.g., β=0.45, r=0.32, HR=0.58, Cohen's d=1.2, or 'unclear']\n",
+    "P_VALUE: [e.g., p<0.001, p=0.034, or 'unreported']\n",
+    "SAMPLE_SIZE: [N value if stated, or 'unreported']\n",
+    "EVIDENCE: [specific support: test statistics, mechanism, citation number]\n",
+    "PATHWAY: [gateway / common_liability / structural / behavioral / physiological / unknown]\n",
+    "ESTABLISHED: [true = strong evidence / false = preliminary/speculative]\n",
+    "NOTES: [any important qualifications, moderators, or limitations]\n",
     "----\n\n",
 
-    "RULES:\n",
-    "1. Only novel claims from Results/Discussion with empirical support\n",
-    "2. Reject generic textbook statements\n",
-    "3. Include magnitude/direction (X increases Y by X%)\n",
-    "4. If no strong claims, return empty\n\n",
+    "CRITICAL RULES:\n",
+    "1. TARGET: 8-12 claims minimum. Do NOT stop at 3-5. Scan ALL of Results + Discussion.\n",
+    "   If you find fewer than 8, go back and find borderline claims you initially skipped.\n",
+    "2. LEAN TOWARD INCLUSION: it is better to extract 12 borderline claims than to miss 5 good ones.\n",
+    "   The critique module will filter weak claims later — your job is to cast a wide net.\n",
+    "3. Include ANY empirical result with a stated effect direction + magnitude OR p<0.10.\n",
+    "4. Each model comparison = its own claim. Each subgroup finding = its own claim.\n",
+    "   Each timepoint comparison = its own claim. Never group multiple results into one.\n",
+    "5. Mark speculative findings as ESTABLISHED: false, but STILL extract them.\n",
+    "6. Include specific numbers, p-values, effect sizes whenever available.\n",
+    "7. Claims must be from Results/Discussion, NOT generic background in Introduction.\n",
+    "8. Include conditional effects (works only for X group, significant at timepoint T, etc.).\n\n",
 
-    "TEXT:\n",
+    "PAPER TEXT:\n",
     text
   )
 
-  # Retry logic for rate limits
-  max_retries <- 3
-  retry_delay_seconds <- 5
+  # Build API request
+  request_body <- list(
+    model = model,
+    messages = list(
+      list(
+        role = "user",
+        content = prompt
+      )
+    ),
+    temperature = temperature,
+    max_tokens = max_tokens
+  )
 
-  for (attempt in 1:max_retries) {
-    # Build API request
-    request_body <- list(
-      model = model,
-      messages = list(
-        list(
-          role = "user",
-          content = prompt
-        )
+  # Make API call
+  tryCatch({
+    response <- httr::POST(
+      url = "https://api.openai.com/v1/chat/completions",
+      httr::add_headers(
+        `Authorization` = paste("Bearer", api_key),
+        `Content-Type` = "application/json"
       ),
-      temperature = temperature,
-      max_tokens = max_tokens
+      body = jsonlite::toJSON(request_body, auto_unbox = TRUE),
+      encode = "raw"
     )
 
-    # Make API call with retry logic
-    response <- tryCatch({
-      httr::POST(
-        url = "https://api.openai.com/v1/chat/completions",
-        httr::add_headers(
-          `Authorization` = paste("Bearer", api_key),
-          `Content-Type` = "application/json"
-        ),
-        body = jsonlite::toJSON(request_body, auto_unbox = TRUE),
-        encode = "raw"
-      )
-    }, error = function(e) {
-      stop(sprintf("API connection error: %s", conditionMessage(e)))
-    })
-
-    # Check for rate limit errors
-    status <- httr::status_code(response)
-    if (status == 429 && attempt < max_retries) {
-      # Rate limited - wait and retry
-      if (verbose) {
-        message(sprintf("Rate limited. Waiting %d seconds before retry %d/%d...",
-                       retry_delay_seconds, attempt, max_retries))
-      }
-      Sys.sleep(retry_delay_seconds)
-      next
-    }
-
-    # Check for other HTTP errors
-    if (status != 200) {
+    # Check for HTTP errors
+    if (httr::status_code(response) != 200) {
       error_content <- tryCatch(
-        jsonlite::fromJSON(httr::content(response, as = "text")),
+        jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8")),
         error = function(e) list(error = list(message = "Unknown error"))
       )
       stop(sprintf("OpenAI API Error (%d): %s",
-                   status,
+                   httr::status_code(response),
                    error_content$error$message))
     }
 
-    # Parse successful response
-    response_text <- httr::content(response, as = "text")
+    # Parse response
+    response_text <- httr::content(response, as = "text", encoding = "UTF-8")
     result <- tryCatch(
       jsonlite::fromJSON(response_text, simplifyVector = FALSE),
       error = function(e) stop(sprintf("Failed to parse API response: %s", conditionMessage(e)))
@@ -198,12 +232,13 @@ cauda.extract <- function(
 
     # Parse text response into structured dataframe
     claims_df <- parse_claims_to_dataframe(claims_text)
+    # Attach raw response as attribute so app can read it without a second API call
+    attr(claims_df, "raw_response") <- claims_text
     return(claims_df)
-  }
 
-  # If we got here, we exhausted retries
-  stop("Failed to extract claims after multiple retries due to rate limiting. ",
-       "Please try again in a few minutes or reduce text length.")
+  }, error = function(e) {
+    stop(sprintf("Error extracting claims: %s", conditionMessage(e)))
+  })
 }
 
 

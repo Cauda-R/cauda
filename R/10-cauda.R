@@ -1439,10 +1439,17 @@ cauda.claims_to_dag <- function(claims,
     cat("  - include speculative:", include_speculative, "\n\n")
   }
 
-  # Extract unique nodes
-  sources <- unique(claims_filtered$source[!is.na(claims_filtered$source) & claims_filtered$source != ""])
-  targets <- unique(claims_filtered$target[!is.na(claims_filtered$target) & claims_filtered$target != ""])
+  # Identify directed claims first — only these become edges (prunes isolated nodes)
+  causal_claims <- claims_filtered[claims_filtered$claim_type %in% c("causal_effect", "mechanism", "mediation", "interaction", "moderation"), ]
+
+  # Extract unique nodes from directed claims only
+  sources <- unique(causal_claims$source[!is.na(causal_claims$source) & causal_claims$source != ""])
+  targets <- unique(causal_claims$target[!is.na(causal_claims$target) & causal_claims$target != ""])
   all_nodes <- unique(c(sources, targets))
+
+  if (length(all_nodes) == 0) {
+    stop("No directed causal claims (causal_effect/mechanism/mediation/interaction/moderation) found to build a DAG.")
+  }
 
   if (verbose) {
     cat("  Nodes:", length(all_nodes), "\n")
@@ -1450,49 +1457,60 @@ cauda.claims_to_dag <- function(claims,
     cat("\n")
   }
 
-  # Create empty DAG
-  dag <- bnlearn::empty.graph(all_nodes)
+  # bnlearn requires valid R names (no spaces/special chars) — sanitize then map back
+  safe_nodes     <- make.unique(make.names(all_nodes), sep = "_")
+  node_lookup    <- setNames(safe_nodes, all_nodes)   # display → safe
+  display_lookup <- setNames(all_nodes, safe_nodes)   # safe → display
 
-  # Add edges from causal_effect claims
+  # Create empty DAG with safe names
+  dag <- bnlearn::empty.graph(safe_nodes)
+
+  # Add edges from directed claims
   edge_metadata <- data.frame(
-    from = character(),
-    to = character(),
-    pathway = character(),
-    established = logical(),
+    from         = character(),
+    to           = character(),
+    from_display = character(),
+    to_display   = character(),
+    pathway      = character(),
+    established  = logical(),
     stringsAsFactors = FALSE
   )
 
-  causal_claims <- claims_filtered[claims_filtered$claim_type == "causal_effect", ]
-
   for (i in seq_len(nrow(causal_claims))) {
     from <- causal_claims$source[i]
-    to <- causal_claims$target[i]
-    pathway <- causal_claims$pathway[i]
+    to   <- causal_claims$target[i]
+    pathway     <- causal_claims$pathway[i]
     established <- causal_claims$established[i]
 
     if (!is.na(from) && !is.na(to) && from != "" && to != "") {
+      from_safe <- node_lookup[from]
+      to_safe   <- node_lookup[to]
       tryCatch({
-        dag <- bnlearn::set.arc(dag, from = from, to = to)
+        dag <- bnlearn::set.arc(dag, from = from_safe, to = to_safe)
         edge_metadata <- rbind(edge_metadata, data.frame(
-          from = from,
-          to = to,
-          pathway = if (is.na(pathway)) "unknown" else pathway,
-          established = if (is.na(established)) TRUE else established,
+          from         = from_safe,
+          to           = to_safe,
+          from_display = from,
+          to_display   = to,
+          pathway      = if (is.na(pathway)) "unknown" else pathway,
+          established  = if (is.na(established)) TRUE else established,
           stringsAsFactors = FALSE
         ))
       }, error = function(e) {
-        if (verbose) cat("Note: Could not add edge", from, "->", to, "\n")
+        if (verbose) cat("Note: Could not add edge", from, "->", to, ":", e$message, "\n")
       })
     }
   }
 
   # Store metadata
-  attr(dag, "edge_metadata") <- edge_metadata
+  attr(dag, "edge_metadata")   <- edge_metadata
+  attr(dag, "display_lookup")  <- display_lookup
   attr(dag, "pathway_colors") <- c(
     gateway = "#E84545",
     common_liability = "chartreuse4",
     structural = "royalblue3",
     behavioral = "#F2A623",
+    physiological = "#9B59B6",
     unknown = "#888888"
   )
 
@@ -1606,11 +1624,21 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   }
 
   # Extract edges and metadata
-  arcs <- bnlearn::arcs(dag)
-  node_names <- bnlearn::nodes(dag)
-  
-  edge_metadata <- attr(dag, "edge_metadata")
+  arcs           <- bnlearn::arcs(dag)
+  node_names     <- bnlearn::nodes(dag)
+  edge_metadata  <- attr(dag, "edge_metadata")
   pathway_colors <- attr(dag, "pathway_colors")
+  display_lookup <- attr(dag, "display_lookup")
+
+  # Map safe node names back to human-readable display names for labels
+  display_node_names <- if (!is.null(display_lookup)) {
+    sapply(node_names, function(n) {
+      d <- display_lookup[n]
+      if (!is.na(d)) d else n
+    }, USE.NAMES = FALSE)
+  } else {
+    node_names
+  }
   
   if (is.null(edge_metadata) || nrow(edge_metadata) == 0) {
     if (verbose) cat("Note: No pathway metadata found. Falling back to standard DAG plot.\n")
@@ -1666,16 +1694,66 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
     }
   }
 
-  # Label wrapping
-  wrap_label <- function(x, max_chars = 12) {
+  # Label wrapping - super aggressive multi-line to keep text inside circles
+  wrap_label <- function(x, max_chars = 10) {
+    # Very short - keep as is
     if (nchar(x) <= max_chars) return(x)
-    splits <- gregexpr("[A-Z]", x)[[1]]
-    splits <- splits[splits > 1]
-    if (length(splits) == 0) return(x)
-    mid <- splits[ceiling(length(splits) / 2)]
-    paste0(substr(x, 1, mid - 1), "\n", substr(x, mid, nchar(x)))
+
+    words <- strsplit(x, " ")[[1]]
+
+    # Single word - split by capitals or characters
+    if (length(words) == 1) {
+      # Try to split on capital letters
+      splits <- gregexpr("[A-Z]", x)[[1]]
+      splits <- splits[splits > 1]
+
+      if (length(splits) >= 2) {
+        # Split at each capital
+        parts <- character(length(splits) + 1)
+        parts[1] <- substr(x, 1, splits[1] - 1)
+        for (i in 2:length(splits)) {
+          start <- splits[i - 1]
+          end <- if (i < length(splits)) splits[i] - 1 else nchar(x)
+          parts[i] <- substr(x, start, end)
+        }
+        parts[length(parts)] <- substr(x, splits[length(splits)], nchar(x))
+        return(paste(parts[parts != ""], collapse = "\n"))
+      } else {
+        # No capitals - split into 2-3 parts by character
+        if (nchar(x) > 15) {
+          # 3 parts
+          third <- ceiling(nchar(x) / 3)
+          return(paste0(
+            substr(x, 1, third), "\n",
+            substr(x, third + 1, 2 * third), "\n",
+            substr(x, 2 * third + 1, nchar(x))
+          ))
+        } else {
+          # 2 parts
+          mid <- ceiling(nchar(x) / 2)
+          return(paste0(substr(x, 1, mid), "\n", substr(x, mid + 1, nchar(x))))
+        }
+      }
+    }
+
+    # Multiple words - put 1 word per line for long labels
+    if (length(words) > 3) {
+      return(paste(words, collapse = "\n"))
+    } else if (length(words) == 3) {
+      return(paste(words, collapse = "\n"))
+    } else if (length(words) == 2) {
+      return(paste(words, collapse = "\n"))
+    }
+
+    return(x)
   }
-  wrapped_labels <- sapply(node_names, wrap_label)
+  # Truncate very long display names before wrapping (keeps circles readable)
+  display_node_names <- ifelse(
+    nchar(display_node_names) > 30,
+    paste0(substr(display_node_names, 1, 28), "…"),
+    display_node_names
+  )
+  wrapped_labels <- sapply(display_node_names, wrap_label)
 
   # Layout with graphopt
   set.seed(42)
@@ -1694,21 +1772,24 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   par(mar = c(1, 1, 3, 1), bg = "white")
 
   # Plot with pathway colors and edge styles
+  # Enhanced styling: opaque circles, LARGE text (wrapped), thick colored edges
   plot(
     g,
     layout             = layout_coords,
     vertex.label       = wrapped_labels,
-    vertex.size        = 22,
-    vertex.color       = adjustcolor(node_colors, alpha.f = 0.85),
-    vertex.label.cex   = 0.48,
+    vertex.size        = 48,
+    vertex.color       = node_colors,
+    vertex.label.cex   = 1.45,
     vertex.label.color = "black",
     vertex.label.font  = 2,
+    vertex.label.dist  = 0,
+    vertex.label.degree = -pi/2,
     vertex.frame.color = "black",
-    vertex.frame.width = 1.5,
-    edge.arrow.size    = 0.5,
-    edge.color         = adjustcolor(edge_colors, alpha.f = 0.75),
+    vertex.frame.width = 3.6,
+    edge.arrow.size    = 0.7,
+    edge.color         = adjustcolor(edge_colors, alpha.f = 0.8),
     edge.lty           = edge_styles,
-    edge.width         = edge_widths,
+    edge.width         = edge_widths * 3.5,
     edge.curved        = 0.25,
     rescale            = FALSE,
     asp                = 0,
