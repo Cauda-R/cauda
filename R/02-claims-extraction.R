@@ -1,239 +1,193 @@
-#' Extract and Assess Causal Claims from Academic Text
+#' Extract Causal Claims from Academic Text (Hybrid Module 0 + Cauda)
 #'
-#' Comprehensive claims extraction using GPT-4-turbo that:
-#' 1. Extracts novel causal claims from academic papers
-#' 2. Assesses evidence strength and confidence levels
-#' 3. Classifies mechanistic pathways
-#' 4. Returns structured dataframe compatible with cauda.claims_to_dag()
+#' Extracts causal and causal-ish claims from any academic paper type —
+#' empirical studies, narrative reviews, perspective pieces, and policy papers.
 #'
-#' @param text Character string containing the text to analyze (typically from PDF)
-#' @param model Character string specifying GPT model. Default: "gpt-4-turbo"
-#' @param temperature Numeric between 0 and 1. Default: 0.3 (focused/deterministic)
-#' @param max_tokens Integer maximum response length. Default: 4000
-#' @param return_raw_text Logical. If TRUE, return raw GPT response for debugging. Default: FALSE
+#' Combines:
+#' - Cox Module 0 approach: verbatim anchoring, claim_class A-D, causal/policy triggers
+#' - Cauda approach: source/target DAG structure, effect sizes, pathway tagging
+#'
+#' @param text Character string containing the paper text
+#' @param model GPT model. Default: "gpt-4-turbo"
+#' @param temperature Numeric 0-1. Default: 0.3
+#' @param max_tokens Integer. Default: 4000
+#' @param paper_id Optional string to tag claims with source paper. Default: NULL
+#' @param return_raw_text Logical. Return raw GPT JSON string. Default: FALSE
 #' @param verbose Logical. Print status messages. Default: TRUE
 #'
-#' @return Either:
-#'   - If return_raw_text=FALSE (default): Data frame with columns:
-#'     * source: independent variable/causal factor
-#'     * target: dependent variable/outcome
-#'     * claim: full claim statement with specifics
-#'     * claim_type: "causal_effect", "mechanism", "conditional", "dose-response", "moderated"
-#'     * confidence: "high", "medium", or "low" based on evidence quality
-#'     * effect_size: e.g., "β=0.45", "d=1.2", "HR=0.58", or "unclear"
-#'     * p_value: e.g., "p<0.001", "p=0.034", or "unreported"
-#'     * sample_size: e.g., "N=284", or "unreported"
-#'     * pathway: "gateway", "common_liability", "structural", "behavioral", "physiological"
-#'     * established: logical (TRUE=strong evidence, FALSE=preliminary/speculative)
-#'     * evidence: supporting evidence (test stats, mechanism, effect magnitude)
-#'     * notes: important qualifications, moderators, limitations
-#'   - If return_raw_text=TRUE: Character string with raw GPT-4 response
-#'
-#' @details
-#' This is the main extraction function for Cauda. It uses GPT-4-turbo with 128k
-#' context window for high-quality claim extraction from academic papers.
-#'
-#' Requires OPENAI_API_KEY environment variable. Set via .Renviron or:
-#'   Sys.setenv(OPENAI_API_KEY = "sk-...")
-#'
-#' The prompt emphasizes QUALITY over QUANTITY. It includes examples of good vs bad
-#' claims and explicitly rejects generic statements. Better to extract fewer high-quality
-#' claims than many weak ones.
-#'
-#' @examples
-#' \dontrun{
-#'   # Set your API key
-#'   Sys.setenv(OPENAI_API_KEY = "sk-your-key")
-#'
-#'   # Extract from paper text
-#'   text <- readLines("paper.txt", warn = FALSE) |> paste(collapse = "\n")
-#'   claims <- cauda.extract(text)
-#'
-#'   # View results
-#'   print(claims)
-#'
-#'   # Convert to DAG
-#'   dag <- cauda.claims_to_dag(claims)
-#'   plot(dag)
-#' }
+#' @return Data frame with columns:
+#'   paper_id, verbatim_quote, source, target, claim,
+#'   claim_type (causal_effect/mechanism/mediation/interaction/moderation/association),
+#'   claim_class (A/B/C/D), causal_trigger, policy_trigger, claim_scope,
+#'   confidence (high/medium/low), effect_size, p_value, sample_size,
+#'   pathway, established, evidence, notes
 #'
 #' @export
 #' @importFrom httr POST add_headers status_code content
 #' @importFrom jsonlite toJSON fromJSON
 cauda.extract <- function(
   text,
-  model = "gpt-4-turbo",
-  temperature = 0.3,
-  max_tokens = 4000,
+  model        = "gpt-4-turbo",
+  temperature  = 0.3,
+  max_tokens   = 4000,
+  paper_id     = NULL,
   return_raw_text = FALSE,
-  verbose = TRUE
+  verbose      = TRUE
 ) {
 
-  # Load .Renviron if it exists (important for ShinyApps.io)
-  renviron_path <- ".Renviron"
-  if (file.exists(renviron_path)) {
-    readRenviron(renviron_path)
-  }
+  # Load .Renviron if present (important for ShinyApps.io)
+  if (file.exists(".Renviron")) readRenviron(".Renviron")
 
-  # Verify API key is set
   api_key <- Sys.getenv("OPENAI_API_KEY")
   if (api_key == "" || nchar(api_key) < 10) {
-    stop("OPENAI_API_KEY environment variable not set. ",
-         "Set in .Renviron or via: Sys.setenv(OPENAI_API_KEY = 'sk-...')")
+    stop("OPENAI_API_KEY not set. Use Sys.setenv(OPENAI_API_KEY = 'sk-...')")
   }
 
-  # GPT-4-turbo has 128k token context
-  # Estimate: 1 character ≈ 1.3 tokens
-  # Reserve 30k tokens for prompt + response, use ~70k for text
+  # Truncate to ~60k chars (~45k tokens) leaving room for prompt + response
   max_text_chars <- 60000
   if (nchar(text) > max_text_chars) {
     text <- substr(text, 1, max_text_chars)
-    message(sprintf("Text truncated to %d characters (GPT-4-turbo limit)", max_text_chars))
+    if (verbose) message(sprintf("Text truncated to %d characters", max_text_chars))
   }
 
-  # Build advanced extraction prompt for GPT-4 with examples
   prompt <- paste0(
-    "You are a world-class causal inference expert reviewing academic research.\n",
-    "Extract ONLY the novel, specific, high-quality causal claims this paper contributes.\n\n",
+    "You are a world-class causal inference expert. Extract ALL causal and causal-ish claims ",
+    "from the paper below. This includes empirical findings, narrative arguments, policy ",
+    "implications, and mechanistic speculation — not just RCT results.\n\n",
 
-    "DEFINITION OF GOOD CLAIMS:\n",
-    "✓ Novel findings specific to THIS paper (not textbook knowledge)\n",
-    "✓ Based on actual data/results (not speculation or background)\n",
-    "✓ From Results/Discussion sections with empirical support\n",
-    "✓ Includes magnitude/direction (X increases Y by 30%, X → Y p<0.01)\n",
-    "✓ Mechanistic specificity (not just 'X affects Y')\n",
-    "✓ Properly qualified (conditional on Z, under conditions C)\n\n",
+    "=== CLAIM CLASSIFICATION ===\n\n",
 
-    "DEFINITION OF BAD CLAIMS (REJECT THESE):\n",
-    "✗ Generic textbook statements ('Stress affects health')\n",
-    "✗ Background knowledge appearing in introduction\n",
-    "✗ Vague unsupported claims from abstract\n",
-    "✗ 'X is important' without specific causal mechanism\n",
-    "✗ Obvious or trivial relationships\n",
-    "✗ Speculation not grounded in data\n\n",
+    "claim_class (assign to EVERY claim):\n",
+    "  A = Descriptive or associational only; no intervention/action implication\n",
+    "      Example: 'UPF consumption is associated with higher crime rates'\n",
+    "  B = Directional/risk language stronger than description, but still observational\n",
+    "      Example: 'Higher UPF intake is linked to increased aggression risk'\n",
+    "  C = Language implying that changing X would change Y, without explicit recommendation\n",
+    "      Example: 'Reducing UPF consumption may lower rates of antisocial behavior'\n",
+    "  D = Explicit intervention, recommendation, policy, discouragement, or decision-use\n",
+    "      Example: 'Prison food programs should eliminate ultra-processed foods'\n\n",
 
-    "EXAMPLES OF HIGH-QUALITY CLAIMS:\n",
-    "1. SOURCE: Sleep deprivation (hours/night) | TARGET: Error rate (%) | EVIDENCE: Each hour lost increases errors 12%, 95%CI[8-16], N=284 | PATHWAY: behavioral\n",
-    "2. SOURCE: Maternal stress (cortisol ng/ml) | TARGET: Birth weight (g) | TYPE: conditional | EVIDENCE: Effect significant only in 3rd trimester, β=-45, p=0.003 | PATHWAY: physiological\n",
-    "3. SOURCE: Social isolation | TARGET: Depression symptoms | TYPE: mechanism | EVIDENCE: Mediated through reduced BDNF, indirect effect b=0.34, p<0.001 | PATHWAY: common_liability\n",
-    "4. SOURCE: Treatment A vs Control | TARGET: Survival (months) | TYPE: causal_effect | EVIDENCE: Hazard ratio=0.58 [0.42-0.79], p<0.001, N=412 RCT | PATHWAY: structural\n",
-    "5. SOURCE: Physical activity (hours/week) | TARGET: Cognitive decline risk | TYPE: dose-response | EVIDENCE: Each 5 hrs/week activity reduces risk 8%, linear trend p=0.02, 10-year follow-up | PATHWAY: behavioral\n\n",
+    "claim_type (pick one):\n",
+    "  causal_effect  = Direct causal claim with empirical support (RCT, quasi-experiment)\n",
+    "  mechanism      = Proposes biological/psychological/social pathway\n",
+    "  mediation      = X affects Y through mediator M\n",
+    "  interaction    = Effect of X on Y depends on Z\n",
+    "  moderation     = Z moderates the X->Y relationship\n",
+    "  association    = Observational association without causal framing\n\n",
 
-    "CONFIDENCE CALIBRATION — assign varied levels, do NOT default everything to 'medium':\n",
-    "HIGH: Controlled experiment (RCT or equivalent) + p<0.05 (ideally Bonferroni/FDR corrected) + large effect (Cohen's d≥0.8, OR≥2.5, HR≤0.6, or r≥0.5) + outcome directly measured + plausible mechanism. N≥30 is sufficient if effect is very large.\n",
-    "  → Example HIGH: RCT, N=37, d=1.27, p_bonf=0.0002, outcome directly measured across 3 timepoints\n",
-    "  → Example HIGH: RCT, N=120, HR=0.52, p<0.001, replicated across subgroups\n",
-    "MEDIUM: RCT/experiment + p<0.05 + moderate effect (d=0.3–0.8), OR observational with strong controls + large effect + p<0.05, OR some experimental uncertainty (borderline N, single timepoint).\n",
-    "  → Example MEDIUM: RCT, N=37, d=0.70, p=0.022, single post measurement, mechanism unclear\n",
-    "  → Example MEDIUM: Observational, N=500, OR=2.1, p<0.001, well-controlled\n",
-    "LOW: Any of these: p>0.05, OR p unreported, OR indirect/mediation-only effect (direct effect not significant), OR small effect (d<0.3), OR observational with poor controls, OR exploratory/post-hoc, OR N<20, OR animal/in-vitro only.\n",
-    "  → Example LOW: Mediation, indirect a×b=-0.94 but direct effect p=0.785 (not significant)\n",
-    "  → Example LOW: Correlation r=0.18, p=0.09, no controls\n",
-    "  → Example LOW: Post-hoc subgroup, N=12, d=0.4, not pre-registered\n\n",
+    "claim_scope (pick one):\n",
+    "  overall_exposure       = Claim about the main exposure broadly\n",
+    "  component_or_subtype   = Claim about a specific component or subgroup\n",
+    "  policy_implication     = What policy should follow from the evidence\n",
+    "  recommendation         = Explicit recommendation to act\n",
+    "  mechanism_or_speculation = Mechanistic or speculative claim\n\n",
 
-    "PATHWAY CLASSIFICATION:\n",
-    "- gateway: Initial causal event that triggers cascade\n",
-    "- common_liability: Shared genetic/environmental cause of both X and Y\n",
-    "- structural: Institutional/systemic mechanism\n",
-    "- behavioral: Behavioral pathway (learning, habituation, etc)\n",
-    "- physiological: Biological/medical mechanism\n",
-    "- unknown: Mechanism unclear from paper\n\n",
+    "causal_trigger: true if the quote implies changing X would change Y. false otherwise.\n",
+    "policy_trigger: true if the quote supports, implies, or recommends action/policy. false otherwise.\n\n",
 
-    "FOR EACH CLAIM, output EXACTLY this format (separated by ----):\n",
-    "CLAIM: [exact statement from paper with specificity, e.g., 'A increases B by 20%, p<0.01']\n",
-    "SOURCE: [independent variable / cause]\n",
-    "TARGET: [dependent variable / effect]\n",
-    "TYPE: [causal_effect / mechanism / conditional / dose-response / other]\n",
-    "CONFIDENCE: [high / medium / low]\n",
-    "EFFECT_SIZE: [e.g., β=0.45, r=0.32, HR=0.58, Cohen's d=1.2, or 'unclear']\n",
-    "P_VALUE: [e.g., p<0.001, p=0.034, or 'unreported']\n",
-    "SAMPLE_SIZE: [N value if stated, or 'unreported']\n",
-    "EVIDENCE: [specific support: test statistics, mechanism, citation number]\n",
-    "PATHWAY: [gateway / common_liability / structural / behavioral / physiological / unknown]\n",
-    "ESTABLISHED: [true = strong evidence / false = preliminary/speculative]\n",
-    "NOTES: [any important qualifications, moderators, or limitations]\n",
-    "----\n\n",
+    "=== CAUDA QUANTITATIVE FIELDS ===\n\n",
 
-    "CRITICAL RULES:\n",
-    "1. TARGET: 8-12 claims minimum. Do NOT stop at 3-5. Scan ALL of Results + Discussion.\n",
-    "   If you find fewer than 8, go back and find borderline claims you initially skipped.\n",
-    "2. LEAN TOWARD INCLUSION: it is better to extract 12 borderline claims than to miss 5 good ones.\n",
-    "   The critique module will filter weak claims later — your job is to cast a wide net.\n",
-    "3. Include ANY empirical result with a stated effect direction + magnitude OR p<0.10.\n",
-    "4. Each model comparison = its own claim. Each subgroup finding = its own claim.\n",
-    "   Each timepoint comparison = its own claim. Never group multiple results into one.\n",
-    "5. Mark speculative findings as ESTABLISHED: false, but STILL extract them.\n",
-    "6. Include specific numbers, p-values, effect sizes whenever available.\n",
-    "7. Claims must be from Results/Discussion, NOT generic background in Introduction.\n",
-    "8. Include conditional effects (works only for X group, significant at timepoint T, etc.).\n\n",
+    "confidence (for empirical papers — use 'low' for narrative/perspective):\n",
+    "  high   = RCT/experiment + p<0.05 + large effect (d≥0.8, OR≥2.5, HR≤0.6)\n",
+    "  medium = RCT + moderate effect, OR strong observational + large effect\n",
+    "  low    = p>0.05, small effect, observational with poor controls, or speculative\n\n",
 
-    "PAPER TEXT:\n",
+    "pathway (mechanism type):\n",
+    "  gateway | common_liability | structural | behavioral | physiological | unknown\n\n",
+
+    "=== OUTPUT FORMAT ===\n\n",
+    "Return ONLY valid JSON. No markdown. No code fences. No commentary.\n\n",
+    "Use exactly this structure:\n",
+    '{\n',
+    '  "study_summary": {\n',
+    '    "paper_type": "empirical|narrative_review|perspective|meta_analysis|other",\n',
+    '    "topic": "brief topic description",\n',
+    '    "study_design": "RCT|observational|review|perspective|etc"\n',
+    '  },\n',
+    '  "claims": [\n',
+    '    {\n',
+    '      "verbatim_quote": "exact quote from paper anchoring this claim",\n',
+    '      "source": "independent variable / causal factor",\n',
+    '      "target": "dependent variable / outcome",\n',
+    '      "claim": "full claim statement with specifics",\n',
+    '      "claim_type": "causal_effect|mechanism|mediation|interaction|moderation|association",\n',
+    '      "claim_class": "A|B|C|D",\n',
+    '      "causal_trigger": true,\n',
+    '      "policy_trigger": false,\n',
+    '      "claim_scope": "overall_exposure|component_or_subtype|policy_implication|recommendation|mechanism_or_speculation",\n',
+    '      "confidence": "high|medium|low",\n',
+    '      "effect_size": "e.g. d=1.2 or unclear",\n',
+    '      "p_value": "e.g. p<0.001 or unreported",\n',
+    '      "sample_size": "e.g. N=284 or unreported",\n',
+    '      "pathway": "gateway|common_liability|structural|behavioral|physiological|unknown",\n',
+    '      "established": true,\n',
+    '      "evidence": "specific support: test stats, mechanism, citation",\n',
+    '      "notes": "qualifications, moderators, limitations"\n',
+    '    }\n',
+    '  ]\n',
+    '}\n\n',
+
+    "=== EXTRACTION RULES ===\n\n",
+    "1. INCLUDE ALL PAPER TYPES. Narrative reviews, perspective pieces, and policy papers\n",
+    "   contain valuable causal-ish claims — extract them even without p-values.\n",
+    "2. Anchor every claim to a verbatim_quote from the paper.\n",
+    "3. One quote = one claim row. Do not merge multiple quotes.\n",
+    "4. TARGET 8-15 claims. Scan Results, Discussion, AND Conclusion.\n",
+    "5. For narrative/perspective papers: most claims will be class B or C, confidence=low.\n",
+    "   That is expected and correct — still extract them.\n",
+    "6. Include mechanistic speculation (claim_type=mechanism, established=false).\n",
+    "7. Include policy implications (claim_class=D, policy_trigger=true).\n",
+    "8. Assign established=false for speculative/unconfirmed claims.\n",
+    "9. effect_size, p_value, sample_size = 'unreported' for narrative papers.\n\n",
+
+    "=== PAPER TEXT ===\n\n",
     text
   )
 
-  # Build API request
   request_body <- list(
-    model = model,
-    messages = list(
-      list(
-        role = "user",
-        content = prompt
-      )
-    ),
+    model       = model,
+    messages    = list(list(role = "user", content = prompt)),
     temperature = temperature,
-    max_tokens = max_tokens
+    max_tokens  = max_tokens
   )
 
-  # Make API call
   tryCatch({
     response <- httr::POST(
       url = "https://api.openai.com/v1/chat/completions",
       httr::add_headers(
         `Authorization` = paste("Bearer", api_key),
-        `Content-Type` = "application/json"
+        `Content-Type`  = "application/json"
       ),
-      body = jsonlite::toJSON(request_body, auto_unbox = TRUE),
+      body   = jsonlite::toJSON(request_body, auto_unbox = TRUE),
       encode = "raw"
     )
 
-    # Check for HTTP errors
     if (httr::status_code(response) != 200) {
-      error_content <- tryCatch(
+      err <- tryCatch(
         jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8")),
         error = function(e) list(error = list(message = "Unknown error"))
       )
       stop(sprintf("OpenAI API Error (%d): %s",
-                   httr::status_code(response),
-                   error_content$error$message))
+                   httr::status_code(response), err$error$message))
     }
 
-    # Parse response
     response_text <- httr::content(response, as = "text", encoding = "UTF-8")
-    result <- tryCatch(
-      jsonlite::fromJSON(response_text, simplifyVector = FALSE),
-      error = function(e) stop(sprintf("Failed to parse API response: %s", conditionMessage(e)))
-    )
+    result <- jsonlite::fromJSON(response_text, simplifyVector = FALSE)
 
-    # Extract claims text
-    if (is.null(result$choices) || length(result$choices) == 0) {
+    if (is.null(result$choices) || length(result$choices) == 0)
       stop("No choices in API response")
-    }
 
-    if (is.null(result$choices[[1]]$message$content)) {
-      stop("No message content in API response")
-    }
+    raw_json <- result$choices[[1]]$message$content
 
-    claims_text <- result$choices[[1]]$message$content
+    if (return_raw_text) return(raw_json)
 
-    # Return raw text if requested (useful for debugging)
-    if (return_raw_text) {
-      return(claims_text)
-    }
+    claims_df <- parse_claims_json(raw_json, paper_id = paper_id)
+    attr(claims_df, "raw_response")  <- raw_json
+    attr(claims_df, "study_summary") <- tryCatch({
+      parsed <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)
+      parsed$study_summary
+    }, error = function(e) NULL)
 
-    # Parse text response into structured dataframe
-    claims_df <- parse_claims_to_dataframe(claims_text)
-    # Attach raw response as attribute so app can read it without a second API call
-    attr(claims_df, "raw_response") <- claims_text
     return(claims_df)
 
   }, error = function(e) {
@@ -242,212 +196,229 @@ cauda.extract <- function(
 }
 
 
-#' Parse GPT-4 Claims Response into Structured Dataframe
+#' Parse JSON Claims Response into Structured Dataframe
 #'
-#' Converts the raw text output from GPT-4 extraction into a properly formatted
-#' dataframe compatible with cauda.claims_to_dag().
-#'
-#' @param claims_text Character string containing GPT-4 response with claims blocks
-#' @return Data frame with columns: source, target, claim, claim_type, confidence,
-#'   pathway, established, evidence
-#'
+#' @param raw_json Character string containing GPT JSON response
+#' @param paper_id Optional paper identifier tag
+#' @return Data frame with all claim fields
 #' @keywords internal
-#' @importFrom stats na.omit
-parse_claims_to_dataframe <- function(claims_text) {
+parse_claims_json <- function(raw_json, paper_id = NULL) {
 
-  # Split by claim blocks (----)
-  blocks <- strsplit(claims_text, "----")[[1]]
-  blocks <- trimws(blocks)
-  blocks <- blocks[blocks != ""]
+  # Strip markdown code fences if GPT included them anyway
+  raw_json <- gsub("^```(?:json)?\\s*", "", raw_json, perl = TRUE)
+  raw_json <- gsub("\\s*```$", "", raw_json, perl = TRUE)
+  raw_json <- trimws(raw_json)
 
-  # Initialize result dataframe
-  claims_list <- list()
-
-  # Parse each block
-  for (block in blocks) {
-    lines <- strsplit(block, "\n")[[1]]
-
-    # Extract fields using pattern matching
-    claim_data <- list(
-      source = NA_character_,
-      target = NA_character_,
-      claim = NA_character_,
-      claim_type = NA_character_,
-      confidence = NA_character_,
-      effect_size = NA_character_,
-      p_value = NA_character_,
-      sample_size = NA_character_,
-      pathway = NA_character_,
-      established = NA,
-      evidence = NA_character_,
-      notes = NA_character_
-    )
-
-    for (line in lines) {
-      line <- trimws(line)
-
-      # Match field patterns (case-insensitive)
-      if (grepl("^CLAIM:", line, ignore.case = TRUE)) {
-        claim_data$claim <- trimws(sub("^CLAIM:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^SOURCE:", line, ignore.case = TRUE)) {
-        claim_data$source <- trimws(sub("^SOURCE:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^TARGET:", line, ignore.case = TRUE)) {
-        claim_data$target <- trimws(sub("^TARGET:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^TYPE:", line, ignore.case = TRUE)) {
-        claim_data$claim_type <- trimws(sub("^TYPE:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^CONFIDENCE:", line, ignore.case = TRUE)) {
-        conf_raw <- trimws(sub("^CONFIDENCE:\\s*", "", line, ignore.case = TRUE))
-        conf_lower <- tolower(conf_raw)
-        if (grepl("high", conf_lower)) {
-          claim_data$confidence <- "high"
-        } else if (grepl("medium", conf_lower)) {
-          claim_data$confidence <- "medium"
-        } else if (grepl("low", conf_lower)) {
-          claim_data$confidence <- "low"
-        } else {
-          claim_data$confidence <- "medium"
-        }
-      } else if (grepl("^EFFECT_SIZE:", line, ignore.case = TRUE)) {
-        claim_data$effect_size <- trimws(sub("^EFFECT_SIZE:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^P_VALUE:", line, ignore.case = TRUE)) {
-        claim_data$p_value <- trimws(sub("^P_VALUE:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^SAMPLE_SIZE:", line, ignore.case = TRUE)) {
-        claim_data$sample_size <- trimws(sub("^SAMPLE_SIZE:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^PATHWAY:", line, ignore.case = TRUE)) {
-        claim_data$pathway <- trimws(sub("^PATHWAY:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^ESTABLISHED:", line, ignore.case = TRUE)) {
-        est_raw <- trimws(sub("^ESTABLISHED:\\s*", "", line, ignore.case = TRUE))
-        est_lower <- tolower(est_raw)
-        if (grepl("^(true|yes|1|established)", est_lower)) {
-          claim_data$established <- TRUE
-        } else if (grepl("^(false|no|0|speculative|preliminary)", est_lower)) {
-          claim_data$established <- FALSE
-        } else {
-          claim_data$established <- NA
-        }
-      } else if (grepl("^EVIDENCE:", line, ignore.case = TRUE)) {
-        claim_data$evidence <- trimws(sub("^EVIDENCE:\\s*", "", line, ignore.case = TRUE))
-      } else if (grepl("^NOTES:", line, ignore.case = TRUE)) {
-        claim_data$notes <- trimws(sub("^NOTES:\\s*", "", line, ignore.case = TRUE))
-      }
+  parsed <- tryCatch(
+    jsonlite::fromJSON(raw_json, simplifyVector = FALSE),
+    error = function(e) {
+      stop(sprintf("Failed to parse GPT JSON response: %s\nRaw response:\n%s",
+                   conditionMessage(e), substr(raw_json, 1, 500)))
     }
+  )
 
-    # Only add if we have source and target
-    if (!is.na(claim_data$source) && claim_data$source != "" &&
-        !is.na(claim_data$target) && claim_data$target != "") {
-      claims_list[[length(claims_list) + 1]] <- claim_data
-    }
+  claims_raw <- parsed$claims
+  if (is.null(claims_raw) || length(claims_raw) == 0) {
+    return(.empty_claims_df())
   }
 
-  # Convert list to dataframe
-  if (length(claims_list) == 0) {
-    # Return empty dataframe with correct structure
-    return(data.frame(
-      source = character(),
-      target = character(),
-      claim = character(),
-      claim_type = character(),
-      confidence = character(),
-      effect_size = character(),
-      p_value = character(),
-      sample_size = character(),
-      pathway = character(),
-      established = logical(),
-      evidence = character(),
-      notes = character(),
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  # Build dataframe from list
-  claims_df <- do.call(rbind, lapply(claims_list, function(x) {
+  claims_list <- lapply(claims_raw, function(cl) {
     data.frame(
-      source = x$source %||% NA_character_,
-      target = x$target %||% NA_character_,
-      claim = x$claim %||% NA_character_,
-      claim_type = x$claim_type %||% NA_character_,
-      confidence = x$confidence %||% NA_character_,
-      effect_size = x$effect_size %||% NA_character_,
-      p_value = x$p_value %||% NA_character_,
-      sample_size = x$sample_size %||% NA_character_,
-      pathway = x$pathway %||% NA_character_,
-      established = x$established %||% NA,
-      evidence = x$evidence %||% NA_character_,
-      notes = x$notes %||% NA_character_,
+      paper_id       = if (!is.null(paper_id)) paper_id else NA_character_,
+      verbatim_quote = .coalesce_str(cl$verbatim_quote),
+      source         = .coalesce_str(cl$source),
+      target         = .coalesce_str(cl$target),
+      claim          = .coalesce_str(cl$claim),
+      claim_type     = .coalesce_str(cl$claim_type),
+      claim_class    = .coalesce_str(cl$claim_class),
+      causal_trigger = isTRUE(cl$causal_trigger),
+      policy_trigger = isTRUE(cl$policy_trigger),
+      claim_scope    = .coalesce_str(cl$claim_scope),
+      confidence     = .coalesce_str(cl$confidence),
+      effect_size    = .coalesce_str(cl$effect_size),
+      p_value        = .coalesce_str(cl$p_value),
+      sample_size    = .coalesce_str(cl$sample_size),
+      pathway        = .coalesce_str(cl$pathway),
+      established    = isTRUE(cl$established),
+      evidence       = .coalesce_str(cl$evidence),
+      notes          = .coalesce_str(cl$notes),
       stringsAsFactors = FALSE
     )
-  }))
+  })
 
-  rownames(claims_df) <- NULL
+  # Drop rows missing both source and target
+  claims_list <- Filter(function(x) {
+    !is.na(x$source) && x$source != "" &&
+    !is.na(x$target) && x$target != ""
+  }, claims_list)
 
-  # Normalize confidence levels
-  claims_df$confidence <- tolower(claims_df$confidence)
-  claims_df$confidence[!claims_df$confidence %in% c("high", "medium", "low")] <- "medium"
+  if (length(claims_list) == 0) return(.empty_claims_df())
 
-  # Normalize pathway types
-  valid_pathways <- c("gateway", "common_liability", "structural", "behavioral", "physiological", "unknown")
-  claims_df$pathway <- tolower(claims_df$pathway)
-  claims_df$pathway[!claims_df$pathway %in% valid_pathways] <- "unknown"
+  df <- do.call(rbind, claims_list)
+  rownames(df) <- NULL
 
-  # Normalize claim types
-  valid_types <- c("causal_effect", "mechanism", "conditional", "dose-response", "moderated", "other")
-  claims_df$claim_type <- tolower(claims_df$claim_type)
-  claims_df$claim_type[!claims_df$claim_type %in% valid_types] <- "causal_effect"
+  # Normalize controlled vocabularies
+  df$confidence  <- .normalize(df$confidence,  c("high","medium","low"),   default = "low")
+  df$claim_type  <- .normalize(df$claim_type,
+    c("causal_effect","mechanism","mediation","interaction","moderation","association"),
+    default = "association")
+  df$claim_class <- .normalize(df$claim_class, c("A","B","C","D"), default = "B")
+  df$pathway     <- .normalize(df$pathway,
+    c("gateway","common_liability","structural","behavioral","physiological","unknown"),
+    default = "unknown")
+  df$claim_scope <- .normalize(df$claim_scope,
+    c("overall_exposure","component_or_subtype","policy_implication",
+      "recommendation","mechanism_or_speculation"),
+    default = "overall_exposure")
 
-  return(claims_df)
+  df
 }
 
 
-# Helper function for NULL coalescing operator (||) for base R
-`%||%` <- function(x, y) {
-  if (is.null(x) || is.na(x) || (is.character(x) && x == "")) y else x
+# ---- Internal helpers -------------------------------------------------------
+
+.empty_claims_df <- function() {
+  data.frame(
+    paper_id       = character(),
+    verbatim_quote = character(),
+    source         = character(),
+    target         = character(),
+    claim          = character(),
+    claim_type     = character(),
+    claim_class    = character(),
+    causal_trigger = logical(),
+    policy_trigger = logical(),
+    claim_scope    = character(),
+    confidence     = character(),
+    effect_size    = character(),
+    p_value        = character(),
+    sample_size    = character(),
+    pathway        = character(),
+    established    = logical(),
+    evidence       = character(),
+    notes          = character(),
+    stringsAsFactors = FALSE
+  )
+}
+
+.coalesce_str <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NA_character_)
+  x <- as.character(x[[1]])
+  if (is.na(x) || x == "") NA_character_ else x
+}
+
+.normalize <- function(x, valid, default = valid[1]) {
+  x <- tolower(trimws(x))
+  x[!x %in% tolower(valid)] <- default
+  x
+}
+
+`%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
+
+
+# ---- Multi-paper extraction -------------------------------------------------
+
+#' Extract Claims from Multiple Papers
+#'
+#' Runs cauda.extract() on a list of PDFs or texts and combines results
+#' into a single dataframe with paper_id tracking on every claim.
+#'
+#' @param papers Named list where names are paper IDs and values are either:
+#'   - Character string of paper text, OR
+#'   - File path to a PDF (if is_pdf = TRUE)
+#' @param is_pdf Logical. If TRUE, treat values as PDF file paths. Default: FALSE
+#' @param ... Additional arguments passed to cauda.extract()
+#'
+#' @return Combined data frame with all claims tagged by paper_id
+#'
+#' @examples
+#' \dontrun{
+#'   papers <- list(
+#'     "prescott2024" = "~/papers/prescott2024.pdf",
+#'     "jones2022"    = "~/papers/jones2022.pdf"
+#'   )
+#'   all_claims <- cauda.extract_multi(papers, is_pdf = TRUE)
+#' }
+#'
+#' @export
+cauda.extract_multi <- function(papers, is_pdf = FALSE, ...) {
+
+  if (!is.list(papers) || length(papers) == 0)
+    stop("papers must be a non-empty named list")
+
+  if (is.null(names(papers)) || any(names(papers) == ""))
+    stop("All papers must have names (used as paper_id). ",
+         "Use: list(paper1 = ..., paper2 = ...)")
+
+  results <- vector("list", length(papers))
+
+  for (i in seq_along(papers)) {
+    pid   <- names(papers)[i]
+    input <- papers[[i]]
+
+    message(sprintf("[%d/%d] Extracting from: %s", i, length(papers), pid))
+
+    tryCatch({
+      if (is_pdf) {
+        if (!file.exists(input))
+          stop(sprintf("PDF not found: %s", input))
+        if (!requireNamespace("pdftools", quietly = TRUE))
+          stop("pdftools required. install.packages('pdftools')")
+        pages <- pdftools::pdf_text(input)
+        text  <- paste(pages, collapse = "\n")
+      } else {
+        text <- input
+      }
+
+      df <- cauda.extract(text, paper_id = pid, ...)
+      results[[i]] <- df
+
+    }, error = function(e) {
+      message(sprintf("  WARNING: Failed for '%s': %s", pid, conditionMessage(e)))
+      results[[i]] <<- .empty_claims_df()
+    })
+  }
+
+  combined <- do.call(rbind, Filter(function(x) nrow(x) > 0, results))
+  if (is.null(combined) || nrow(combined) == 0) {
+    message("No claims extracted from any paper.")
+    return(.empty_claims_df())
+  }
+
+  rownames(combined) <- NULL
+  message(sprintf("Done. Extracted %d total claims from %d papers.",
+                  nrow(combined), length(papers)))
+  combined
 }
 
 
 #' Extract Causal Claims from a PDF File
 #'
-#' Convenience wrapper that reads a PDF paper and extracts causal claims in one step.
-#' Internally calls cauda.extract() on the PDF text.
+#' Convenience wrapper: reads a PDF and calls cauda.extract().
 #'
-#' @param pdf_path Character string path to PDF file
+#' @param pdf_path Path to PDF file
+#' @param paper_id Optional ID tag for this paper
 #' @param ... Additional arguments passed to cauda.extract()
-#'
-#' @return Data frame with extracted claims (see cauda.extract)
-#'
-#' @details
-#' Extracts text from all pages of the PDF and passes to cauda.extract().
-#' Requires pdftools package.
-#'
-#' @examples
-#' \dontrun{
-#'   # Extract claims from a paper
-#'   claims <- cauda.extract_pdf("paper.pdf")
-#'
-#'   # Generate DAG from claims
-#'   dag <- cauda.claims_to_dag(claims)
-#'   plot(dag)
-#' }
+#' @return Data frame with extracted claims
 #'
 #' @export
 #' @importFrom pdftools pdf_text
-cauda.extract_pdf <- function(pdf_path, ...) {
+cauda.extract_pdf <- function(pdf_path, paper_id = NULL, ...) {
 
-  if (!file.exists(pdf_path)) {
+  if (!file.exists(pdf_path))
     stop("PDF file not found: ", pdf_path)
-  }
 
-  if (!requireNamespace("pdftools", quietly = TRUE)) {
+  if (!requireNamespace("pdftools", quietly = TRUE))
     stop("pdftools required. Install with: install.packages('pdftools')")
-  }
 
-  # Extract text from PDF
-  pdf_pages <- pdftools::pdf_text(pdf_path)
-  full_text <- paste(pdf_pages, collapse = "\n")
+  pages     <- pdftools::pdf_text(pdf_path)
+  full_text <- paste(pages, collapse = "\n")
 
-  if (nchar(full_text) == 0) {
+  if (nchar(full_text) == 0)
     stop("Could not extract text from PDF: ", pdf_path)
-  }
 
-  # Extract claims using main function
-  cauda.extract(full_text, ...)
+  if (is.null(paper_id))
+    paper_id <- tools::file_path_sans_ext(basename(pdf_path))
+
+  cauda.extract(full_text, paper_id = paper_id, ...)
 }

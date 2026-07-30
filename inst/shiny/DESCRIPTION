@@ -1,0 +1,10 @@
+Package: cauda-paper-analysis
+Title: Cauda Paper Analysis Shiny App
+Version: 0.1
+Depends: R (>= 4.0)
+Imports:
+    shiny,
+    cauda,
+    pdftools
+Remotes:
+    Cauda-R/cauda

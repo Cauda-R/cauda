@@ -1,87 +1,139 @@
 library(shiny)
-# cauda and pdftools are loaded in global.R (which also handles shinyapps.io install)
+# cauda and pdftools loaded in global.R (handles shinyapps.io install too)
 
 ui <- fluidPage(
-  titlePanel("Cauda - Extract Causal Claims & Generate DAGs"),
+  titlePanel("Cauda — Causal Claim Extraction & DAG Comparison"),
+
+  tags$style(HTML("
+    .claim-card  { margin-bottom:18px; padding:14px; border-left:4px solid #3498db;
+                   background:#f8f9fa; border-radius:4px; }
+    .badge       { display:inline-block; padding:2px 8px; border-radius:3px;
+                   color:white; font-size:0.82em; font-weight:600; }
+    .badge-high  { background:#27ae60; }
+    .badge-med   { background:#f39c12; }
+    .badge-low   { background:#e74c3c; }
+    .badge-A     { background:#95a5a6; }
+    .badge-B     { background:#3498db; }
+    .badge-C     { background:#9b59b6; }
+    .badge-D     { background:#e67e22; }
+    .badge-causal{ background:#1abc9c; }
+    .badge-policy{ background:#e74c3c; }
+    .quote-block { border-left:3px solid #bdc3c7; padding:6px 12px; margin:8px 0;
+                   font-style:italic; color:#555; background:#fff; border-radius:2px; }
+    .paper-tag   { display:inline-block; padding:1px 7px; border-radius:10px;
+                   background:#2c3e50; color:white; font-size:0.78em; margin-right:5px; }
+    .edge-row    { padding:6px 10px; border-bottom:1px solid #eee; }
+    .edge-row:hover { background:#f0f0f0; }
+  ")),
 
   sidebarLayout(
-    sidebarPanel(
-      h4("Step 1: Upload PDF"),
-      fileInput("pdf_file", "Select PDF Paper", accept = ".pdf"),
-
-      h4("Step 2: Extract Claims"),
-      actionButton("extract_btn", "Extract Causal Claims", class = "btn-primary btn-lg"),
-      br(), br(),
-
-      h4("Step 3: Filter Claims (Optional)"),
-      textInput("claim_search", "Search by keyword:", ""),
-      selectInput("pathway_filter", "Filter by pathway:",
-                  c("All pathways", "physiological", "behavioral", "structural", "unknown")),
-      selectInput("confidence_filter", "Filter by confidence:",
-                  c("All confidence", "high", "medium", "low")),
-      br(),
-
-      h4("Step 4: Generate DAG"),
-      p("Once claims are extracted, click below to create a causal DAG:"),
-      actionButton("dag_btn", "Generate DAG from Claims", class = "btn-success btn-lg"),
+    sidebarPanel(width = 3,
+      h4("Step 1: Upload Papers"),
+      fileInput("pdf_files", "Select PDF(s)", accept = ".pdf", multiple = TRUE),
+      uiOutput("paper_list_ui"),
 
       hr(),
-      p(em("Powered by GPT-4-turbo + Cauda"), style = "color: #888; font-size: 12px;")
+      h4("Step 2: Extract Claims"),
+      actionButton("extract_btn", "Extract from All Papers",
+                   class = "btn-primary btn-block"),
+      br(),
+
+      h4("Step 3: Filter"),
+      textInput("claim_search", "Keyword search:", ""),
+      uiOutput("paper_filter_ui"),
+      selectInput("class_filter", "Claim class:",
+                  c("All classes","A","B","C","D")),
+      selectInput("confidence_filter", "Confidence:",
+                  c("All confidence","high","medium","low")),
+      selectInput("pathway_filter", "Pathway:",
+                  c("All pathways","physiological","behavioral",
+                    "structural","gateway","common_liability","unknown")),
+      checkboxInput("causal_only", "Causal triggers only", FALSE),
+      checkboxInput("policy_only", "Policy triggers only",  FALSE),
+
+      hr(),
+      h4("Step 4: Generate DAG"),
+      actionButton("dag_btn", "Build DAG from Claims",
+                   class = "btn-success btn-block"),
+
+      hr(),
+      p(em("Powered by GPT-4-turbo + Cauda"),
+        style = "color:#888; font-size:11px;")
     ),
 
-    mainPanel(
+    mainPanel(width = 9,
       tabsetPanel(
-        tabPanel("Status & Claims",
-          h4("Status"),
-          textOutput("status"),
+        # ── STATUS ──────────────────────────────────────────────────────────
+        tabPanel("Status & Summary",
           br(),
-          h4("Extracted Claims (Summary)"),
-          tableOutput("claims_table"),
-          br()
+          uiOutput("status_ui"),
+          br(),
+          h4("Claims Summary Table"),
+          tableOutput("claims_table")
         ),
 
+        # ── DETAILED CLAIMS ─────────────────────────────────────────────────
         tabPanel("Detailed Claims",
-          h4("Rich Claim Details"),
-          p("Expanded view with study design, confounders, evidence quality, mechanism details, and limitations"),
-          uiOutput("detailed_claims"),
-          br()
-        ),
-
-        tabPanel("Critique",
-          h4("Causal Strength & Evidence Critique"),
-          p("Critical evaluation of each claim's causal validity and evidence gaps"),
-          actionButton("critique_btn", "Run Critique Analysis", class = "btn-warning"),
-          br(), br(),
-          uiOutput("critique_output"),
-          br()
-        ),
-
-        tabPanel("Synthesis",
-          h4("Multi-Module Synthesis Report"),
-          p("Comprehensive analysis combining summary, claims, critique, and mechanisms"),
-          div(
-            actionButton("synthesis_btn", "Generate Synthesis Report", class = "btn-info"),
-            downloadButton("download_synthesis", "Download Report (.txt)", class = "btn-success"),
-            style = "display: inline-block; margin: 0 5px;"
-          ),
-          br(), br(),
-          uiOutput("synthesis_output"),
-          br()
-        ),
-
-        tabPanel("Causal DAG",
-          h4("Causal Graph"),
-          plotOutput("dag_plot", height = "600px"),
           br(),
-          h4("DAG Summary"),
+          uiOutput("detailed_claims")
+        ),
+
+        # ── CRITIQUE ────────────────────────────────────────────────────────
+        tabPanel("Critique",
+          br(),
+          actionButton("critique_btn", "Run Critique", class = "btn-warning"),
+          br(), br(),
+          uiOutput("critique_output")
+        ),
+
+        # ── SYNTHESIS ───────────────────────────────────────────────────────
+        tabPanel("Synthesis",
+          br(),
+          actionButton("synthesis_btn", "Generate Synthesis", class = "btn-info"),
+          downloadButton("download_synthesis", "Download (.txt)", class = "btn-success"),
+          br(), br(),
+          uiOutput("synthesis_output")
+        ),
+
+        # ── CAUSAL DAG ──────────────────────────────────────────────────────
+        tabPanel("Causal DAG",
+          br(),
+          fluidRow(
+            column(8,
+              plotOutput("dag_plot", height = "550px")
+            ),
+            column(4,
+              h5("Edit DAG Edges"),
+              wellPanel(
+                h6("Add Edge"),
+                textInput("edge_from", "From node:", ""),
+                textInput("edge_to",   "To node:",   ""),
+                actionButton("add_edge_btn", "Add Edge", class = "btn-sm btn-primary"),
+                hr(),
+                h6("Current Edges"),
+                p("Click an edge to select it, then use buttons below.", style="font-size:11px; color:#888;"),
+                div(style="max-height:250px; overflow-y:auto;",
+                  uiOutput("edge_list_ui")
+                ),
+                br(),
+                actionButton("reverse_edge_btn", "Reverse Selected", class = "btn-sm btn-warning"),
+                actionButton("delete_edge_btn",  "Delete Selected",  class = "btn-sm btn-danger"),
+                hr(),
+                actionButton("replot_btn", "Replot DAG", class = "btn-sm btn-success")
+              )
+            )
+          ),
+          br(),
           verbatimTextOutput("dag_summary")
         ),
 
-        tabPanel("Debug Info",
-          h4("Raw GPT-4-turbo Response"),
+        # ── DEBUG ───────────────────────────────────────────────────────────
+        tabPanel("Debug",
+          br(),
+          h5("Raw GPT JSON Response"),
           verbatimTextOutput("raw_claims"),
           br(),
-          h4("Parsed Claims (R Format)"),
+          h5("Claims Dataframe"),
           verbatimTextOutput("parsed_claims_output")
         )
       )
@@ -89,560 +141,510 @@ ui <- fluidPage(
   )
 )
 
+
+# ══════════════════════════════════════════════════════════════════════════════
 server <- function(input, output, session) {
-  # Reactive values to store state
-  pdf_text <- reactiveVal(NULL)
-  claims_df <- reactiveVal(NULL)
-  dag_obj <- reactiveVal(NULL)
-  raw_response <- reactiveVal(NULL)
-  critique_df <- reactiveVal(NULL)
-  synthesis_results <- reactiveVal(NULL)
 
-  # STEP 1: Extract text from PDF
+  # ── Reactive state ─────────────────────────────────────────────────────────
+  all_claims     <- reactiveVal(NULL)   # combined multi-paper claims df
+  dag_obj        <- reactiveVal(NULL)   # bnlearn DAG
+  custom_edges   <- reactiveVal(NULL)   # data.frame(from, to) of user-edited edges
+  selected_edge  <- reactiveVal(NULL)   # index into custom_edges
+  raw_response   <- reactiveVal(NULL)
+  critique_df    <- reactiveVal(NULL)
+  synthesis_res  <- reactiveVal(NULL)
+  paper_texts    <- reactiveVal(list()) # named list: paper_id -> full text
+
+  # ── Paper list UI ──────────────────────────────────────────────────────────
+  output$paper_list_ui <- renderUI({
+    req(input$pdf_files)
+    names_list <- input$pdf_files$name
+    tagList(
+      p(strong(sprintf("%d paper(s) queued:", length(names_list))),
+        style = "margin:6px 0 2px;"),
+      tags$ul(
+        lapply(names_list, function(n)
+          tags$li(n, style = "font-size:12px; color:#555;")
+        )
+      )
+    )
+  })
+
+  # ── Paper filter UI (populated after extraction) ───────────────────────────
+  output$paper_filter_ui <- renderUI({
+    df <- all_claims()
+    if (is.null(df) || !"paper_id" %in% names(df)) return(NULL)
+    ids <- c("All papers", unique(na.omit(df$paper_id)))
+    selectInput("paper_filter", "Filter by paper:", ids)
+  })
+
+  # ── EXTRACT ────────────────────────────────────────────────────────────────
   observeEvent(input$extract_btn, {
-    req(input$pdf_file)
+    req(input$pdf_files)
+    files <- input$pdf_files
 
-    output$status <- renderText("⏳ Extracting text from PDF...")
+    output$status_ui <- renderUI(
+      p("⏳ Extracting from ", nrow(files), " paper(s)…", style="color:#f39c12;")
+    )
 
     tryCatch({
-      pdf_path <- input$pdf_file$datapath
+      texts <- list()
+      for (i in seq_len(nrow(files))) {
+        pid   <- tools::file_path_sans_ext(files$name[i])
+        pages <- pdftools::pdf_text(files$datapath[i])
+        texts[[pid]] <- paste(pages, collapse = "\n")
+      }
+      paper_texts(texts)
 
-      # Extract text from all pages
-      text_pages <- pdftools::pdf_text(pdf_path)
-      full_text <- paste(text_pages, collapse = "\n")
+      combined <- withProgress(
+        message = sprintf("Extracting from %d paper(s)…", length(texts)),
+        detail  = "Calling GPT-4-turbo…",
+        value   = 0.3, {
+          cauda::cauda.extract_multi(texts, is_pdf = FALSE,
+                                     model = "gpt-4-turbo",
+                                     temperature = 0.3, max_tokens = 4000)
+        }
+      )
 
-      if (nchar(full_text) == 0) {
-        output$status <- renderText("❌ Error: Could not extract text from PDF. Is it a valid PDF?")
+      all_claims(combined)
+      custom_edges(NULL)
+      dag_obj(NULL)
+
+      output$status_ui <- renderUI(
+        p(sprintf("✓ Extracted %d claims from %d paper(s). Ready to build DAG.",
+                  nrow(combined), length(texts)),
+          style = "color:#27ae60; font-weight:bold;")
+      )
+
+      raw_response(attr(combined, "raw_response") %||% "")
+
+    }, error = function(e) {
+      output$status_ui <- renderUI(
+        p(paste("❌ Error:", e$message), style="color:#e74c3c;")
+      )
+    })
+  })
+
+  # ── Filtered claims (reactive) ────────────────────────────────────────────
+  filtered_claims <- reactive({
+    df <- all_claims()
+    if (is.null(df) || nrow(df) == 0) return(df)
+
+    # Paper filter
+    if (!is.null(input$paper_filter) && input$paper_filter != "All papers")
+      df <- df[df$paper_id == input$paper_filter, ]
+
+    # Keyword
+    if (!is.null(input$claim_search) && nchar(trimws(input$claim_search)) > 0) {
+      kw <- tolower(trimws(input$claim_search))
+      df <- df[grepl(kw, tolower(paste(df$source, df$target, df$claim)), perl=TRUE), ]
+    }
+
+    # Claim class
+    if (!is.null(input$class_filter) && input$class_filter != "All classes")
+      df <- df[df$claim_class == input$class_filter, ]
+
+    # Confidence
+    if (!is.null(input$confidence_filter) && input$confidence_filter != "All confidence")
+      df <- df[df$confidence == input$confidence_filter, ]
+
+    # Pathway
+    if (!is.null(input$pathway_filter) && input$pathway_filter != "All pathways")
+      df <- df[df$pathway == input$pathway_filter, ]
+
+    # Triggers
+    if (isTRUE(input$causal_only)) df <- df[df$causal_trigger == TRUE, ]
+    if (isTRUE(input$policy_only))  df <- df[df$policy_trigger == TRUE,  ]
+
+    df
+  })
+
+  # ── Summary table ─────────────────────────────────────────────────────────
+  output$claims_table <- renderTable({
+    df <- filtered_claims()
+    if (is.null(df) || nrow(df) == 0)
+      return(data.frame(Message = "No claims yet. Upload PDFs and click Extract."))
+
+    show <- data.frame(
+      Paper      = ifelse(is.na(df$paper_id), "", substr(df$paper_id, 1, 15)),
+      Source     = substr(df$source, 1, 20),
+      Target     = substr(df$target, 1, 20),
+      Class      = df$claim_class,
+      Confidence = df$confidence,
+      `Effect Size` = df$effect_size,
+      `P-Value`     = df$p_value,
+      Pathway    = df$pathway,
+      check.names = FALSE, stringsAsFactors = FALSE
+    )
+    show
+  }, striped = TRUE, hover = TRUE, width = "100%")
+
+  # ── Detailed claims ────────────────────────────────────────────────────────
+  output$detailed_claims <- renderUI({
+    df <- filtered_claims()
+    if (is.null(df) || nrow(df) == 0)
+      return(div(p("No claims to display.", style="color:#666; font-style:italic;")))
+
+    # Sort: high → medium → low
+    df$confidence <- factor(df$confidence, levels = c("high","medium","low"))
+    df <- df[order(df$confidence), ]
+
+    cards <- lapply(seq_len(nrow(df)), function(i) {
+      r <- df[i, ]
+
+      conf_cls <- switch(as.character(r$confidence),
+        high="badge-high", medium="badge-med", low="badge-low", "badge-low")
+      cls_cls <- paste0("badge-", r$claim_class)
+
+      div(class = "claim-card",
+        # Header row
+        div(style="display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin-bottom:8px;",
+          if (!is.na(r$paper_id))  span(r$paper_id, class="paper-tag"),
+          span(paste("Class", r$claim_class), class=paste("badge", cls_cls)),
+          span(r$confidence,  class=paste("badge", conf_cls)),
+          if (isTRUE(r$causal_trigger)) span("causal trigger", class="badge badge-causal"),
+          if (isTRUE(r$policy_trigger))  span("policy trigger",  class="badge badge-policy")
+        ),
+
+        h5(paste0(r$source, " → ", r$target), style="margin:0 0 6px;"),
+
+        # Verbatim quote
+        if (!is.na(r$verbatim_quote) && r$verbatim_quote != "")
+          div(class="quote-block", paste0('"', r$verbatim_quote, '"')),
+
+        p(strong("Claim: "), r$claim, style="margin:6px 0;"),
+
+        div(style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:6px; font-size:0.9em;",
+          p(strong("Type: "),       r$claim_type,  style="margin:0;"),
+          p(strong("Scope: "),      r$claim_scope, style="margin:0;"),
+          p(strong("Pathway: "),    r$pathway,     style="margin:0;"),
+          p(strong("Established: "), if(isTRUE(r$established)) "Yes" else "No", style="margin:0;"),
+          p(strong("Effect: "),  r$effect_size,  style="margin:0;"),
+          p(strong("P-value: "), r$p_value,      style="margin:0;")
+        ),
+
+        if (!is.na(r$evidence) && r$evidence != "")
+          div(style="margin-top:8px; padding:8px; background:#e8f4f8; border-radius:3px; font-size:0.9em;",
+            strong("Evidence: "), r$evidence),
+
+        if (!is.na(r$notes) && r$notes != "")
+          div(style="margin-top:6px; font-size:0.88em; color:#777;",
+            strong("Notes: "), r$notes)
+      )
+    })
+
+    div(
+      h4(sprintf("%d Claims", nrow(df)),
+         style="border-bottom:2px solid #3498db; padding-bottom:8px;"),
+      do.call(div, cards)
+    )
+  })
+
+  # ── Critique ───────────────────────────────────────────────────────────────
+  observeEvent(input$critique_btn, {
+    req(all_claims())
+    df <- all_claims()
+    if (nrow(df) == 0) {
+      output$critique_output <- renderUI(p("No claims to critique.", style="color:#e74c3c;"))
+      return()
+    }
+    tryCatch({
+      crit <- withProgress(
+        message = "Running critique…",
+        detail  = sprintf("Evaluating %d claims", nrow(df)),
+        value   = 0.5,
+        cauda::cauda.critique(df, verbose = TRUE)
+      )
+      critique_df(crit)
+      output$critique_output <- renderUI(render_critique_results(crit))
+    }, error = function(e) {
+      output$critique_output <- renderUI(p(paste("❌", e$message), style="color:#e74c3c;"))
+    })
+  })
+
+  # ── Synthesis ──────────────────────────────────────────────────────────────
+  observeEvent(input$synthesis_btn, {
+    req(all_claims(), critique_df())
+    tryCatch({
+      syn <- withProgress(
+        message = "Generating synthesis…", detail = "Calling GPT-4o-mini", value = 0.5,
+        cauda::cauda.synthesize(
+          paste(unlist(paper_texts()), collapse="\n\n---\n\n"),
+          all_claims(), critique_df(), verbose = TRUE
+        )
+      )
+      synthesis_res(syn)
+      output$synthesis_output <- renderUI(render_synthesis_report(syn, all_claims(), critique_df()))
+    }, error = function(e) {
+      output$synthesis_output <- renderUI(p(paste("❌", e$message), style="color:#e74c3c;"))
+    })
+  })
+
+  # ── Build DAG ─────────────────────────────────────────────────────────────
+  observeEvent(input$dag_btn, {
+    req(all_claims())
+    df <- all_claims()
+    if (nrow(df) == 0) { output$status_ui <- renderUI(p("No claims.")); return() }
+
+    tryCatch({
+      dag <- cauda::cauda.claims_to_dag(df, confidence_threshold="low",
+                                        include_speculative=TRUE, verbose=TRUE)
+      dag_obj(dag)
+
+      # Seed custom_edges from the DAG's edge_metadata (display names + pathway,
+      # not the sanitized bnlearn node names arcs() would return)
+      edge_meta <- attr(dag, "edge_metadata")
+      if (!is.null(edge_meta) && nrow(edge_meta) > 0) {
+        custom_edges(data.frame(
+          from    = edge_meta$from_display,
+          to      = edge_meta$to_display,
+          pathway = edge_meta$pathway,
+          stringsAsFactors = FALSE
+        ))
+      } else {
+        custom_edges(data.frame(from=character(), to=character(), pathway=character(), stringsAsFactors=FALSE))
+      }
+
+      replot_dag()
+
+    }, error = function(e) {
+      output$status_ui <- renderUI(p(paste("❌ DAG error:", e$message), style="color:#e74c3c;"))
+    })
+  })
+
+  # ── DAG edge list UI ──────────────────────────────────────────────────────
+  output$edge_list_ui <- renderUI({
+    edges <- custom_edges()
+    if (is.null(edges) || nrow(edges) == 0) return(p("No edges.", style="color:#888; font-size:12px;"))
+    sel <- selected_edge()
+
+    rows <- lapply(seq_len(nrow(edges)), function(i) {
+      bg <- if (!is.null(sel) && sel == i) "#d5e8d4" else "transparent"
+      div(class="edge-row", style=paste0("cursor:pointer; background:", bg, ";"),
+        onclick = sprintf("Shiny.setInputValue('selected_edge_click', %d, {priority: 'event'})", i),
+        span(edges$from[i], style="font-weight:600;"),
+        " → ",
+        span(edges$to[i])
+      )
+    })
+    do.call(div, rows)
+  })
+
+  observeEvent(input$selected_edge_click, {
+    selected_edge(input$selected_edge_click)
+  })
+
+  # ── Add edge ──────────────────────────────────────────────────────────────
+  observeEvent(input$add_edge_btn, {
+    f <- trimws(input$edge_from)
+    t <- trimws(input$edge_to)
+    if (f == "" || t == "") return()
+    edges <- custom_edges() %||% data.frame(from=character(), to=character(), pathway=character(), stringsAsFactors=FALSE)
+    # Prevent duplicate
+    if (!any(edges$from == f & edges$to == t))
+      custom_edges(rbind(edges, data.frame(from=f, to=t, pathway="unknown", stringsAsFactors=FALSE)))
+    updateTextInput(session, "edge_from", value="")
+    updateTextInput(session, "edge_to",   value="")
+  })
+
+  # ── Reverse edge ──────────────────────────────────────────────────────────
+  observeEvent(input$reverse_edge_btn, {
+    sel   <- selected_edge()
+    edges <- custom_edges()
+    if (is.null(sel) || is.null(edges) || sel > nrow(edges)) return()
+    tmp <- edges$from[sel]
+    edges$from[sel] <- edges$to[sel]
+    edges$to[sel]   <- tmp
+    custom_edges(edges)
+  })
+
+  # ── Delete edge ───────────────────────────────────────────────────────────
+  observeEvent(input$delete_edge_btn, {
+    sel   <- selected_edge()
+    edges <- custom_edges()
+    if (is.null(sel) || is.null(edges) || sel > nrow(edges)) return()
+    custom_edges(edges[-sel, , drop=FALSE])
+    selected_edge(NULL)
+  })
+
+  # ── Replot ────────────────────────────────────────────────────────────────
+  observeEvent(input$replot_btn, replot_dag())
+
+  replot_dag <- function() {
+    edges <- custom_edges()
+    df    <- all_claims()
+    req(!is.null(edges), !is.null(df))
+
+    tryCatch({
+      # Rebuild dag from custom_edges
+      all_nodes <- unique(c(edges$from, edges$to))
+      if (length(all_nodes) == 0) {
+        output$dag_plot <- renderPlot({
+          plot(1, type="n", axes=FALSE, main="No edges in DAG")
+          text(1, 1, "Add edges to display DAG", cex=1.5, col="gray")
+        })
+        output$dag_summary <- renderPrint(cat("No edges.\n"))
         return()
       }
 
-      pdf_text(full_text)
-      paper_name <- tools::file_path_sans_ext(input$pdf_file$name)
+      # Build lookup from display names to safe (bnlearn-valid) names, same
+      # scheme cauda.claims_to_dag() uses, so cauda.dag_theory() can render this
+      safe           <- make.unique(make.names(all_nodes), sep = "_")
+      node_lookup    <- setNames(safe, all_nodes)   # display -> safe
+      display_lookup <- setNames(all_nodes, safe)   # safe -> display
 
-      # Call improved extraction function — withProgress shows a spinner overlay
-      claims <- withProgress(
-        message = sprintf("Extracting claims from \"%s\"…", paper_name),
-        detail  = "Calling GPT-4-turbo (30–45 sec)",
-        value   = 0.4, {
-          result <- cauda::cauda.extract(
-            full_text,
-            model = "gpt-4-turbo",
-            temperature = 0.3,
-            max_tokens = 4000
-          )
-          setProgress(0.95, detail = "Parsing results…")
-          result
-        }
+      new_dag <- bnlearn::empty.graph(safe)
+
+      # Rebuild edge_metadata (from/to safe names, display names, pathway) so
+      # cauda.dag_theory() keeps pathway coloring and readable labels post-edit
+      edge_metadata <- data.frame(
+        from = character(), to = character(),
+        from_display = character(), to_display = character(),
+        pathway = character(), established = logical(),
+        stringsAsFactors = FALSE
       )
 
-      # Raw response stored as attribute — no second API call needed
-      raw_resp <- attr(claims, "raw_response") %||% "Raw response not captured"
-      raw_response(raw_resp)
+      for (i in seq_len(nrow(edges))) {
+        f <- node_lookup[edges$from[i]]
+        t <- node_lookup[edges$to[i]]
+        if (!is.na(f) && !is.na(t) && f != t) {
+          tryCatch({
+            new_dag <- bnlearn::set.arc(new_dag, from = f, to = t)
+            pw <- if (!is.null(edges$pathway)) edges$pathway[i] else NA
+            edge_metadata <- rbind(edge_metadata, data.frame(
+              from = f, to = t,
+              from_display = edges$from[i], to_display = edges$to[i],
+              pathway = if (is.null(pw) || is.na(pw) || pw == "") "unknown" else pw,
+              established = TRUE,
+              stringsAsFactors = FALSE
+            ))
+          }, error = function(e) {
+            message(sprintf("Skipped edge %s -> %s: %s", edges$from[i], edges$to[i], conditionMessage(e)))
+          })
+        }
+      }
 
-      # Store the dataframe
-      claims_df(claims)
-
-      # Update status and display results
-      n_claims <- nrow(claims)
-      output$status <- renderText(
-        sprintf("✓ %s — Extracted %d causal claims. Ready to generate DAG.", paper_name, n_claims)
+      attr(new_dag, "edge_metadata")  <- edge_metadata
+      attr(new_dag, "display_lookup") <- display_lookup
+      attr(new_dag, "pathway_colors") <- c(
+        gateway = "#E84545", common_liability = "chartreuse4",
+        structural = "royalblue3", behavioral = "#F2A623",
+        physiological = "#9B59B6", unknown = "#888888"
       )
 
-      # Display claims as table
-      output$claims_table <- renderTable({
-        if (nrow(claims) == 0) {
-          return(data.frame(Message = "No claims extracted. Try a different paper or section."))
-        }
+      dag_obj(new_dag)
 
-        # Format for display - show most important columns
-        display_df <- claims[, c("source", "target", "confidence", "effect_size", "p_value", "pathway")]
-        colnames(display_df) <- c("Source", "Target", "Conf.", "Effect Size", "P-Value", "Pathway")
-
-        # Truncate for readability
-        display_df$Source <- substr(display_df$Source, 1, 20)
-        display_df$Target <- substr(display_df$Target, 1, 20)
-
-        display_df
-      }, striped = TRUE, hover = TRUE, width = "100%")
-
-      # Display parsed claims for debugging
-      output$parsed_claims_output <- renderPrint({
-        print(claims)
-      })
-
-      # Display detailed claims with professional HTML formatting
-      output$detailed_claims <- renderUI({
-        if (nrow(claims) == 0) {
-          return(div(p("No claims extracted yet.", style = "color: #666; font-style: italic;")))
-        }
-
-        # Apply filters
-        claims_filtered <- claims
-
-        # Keyword search
-        if (input$claim_search != "") {
-          search_term <- tolower(input$claim_search)
-          matches <- grepl(search_term, tolower(paste(claims_filtered$source, claims_filtered$target, claims_filtered$claim)), perl = TRUE)
-          claims_filtered <- claims_filtered[matches, ]
-        }
-
-        # Pathway filter
-        if (input$pathway_filter != "All pathways") {
-          claims_filtered <- claims_filtered[claims_filtered$pathway == input$pathway_filter, ]
-        }
-
-        # Confidence filter
-        if (input$confidence_filter != "All confidence") {
-          claims_filtered <- claims_filtered[claims_filtered$confidence == input$confidence_filter, ]
-        }
-
-        if (nrow(claims_filtered) == 0) {
-          return(div(p("No claims match your filters.", style = "color: #f39c12; font-style: italic;")))
-        }
-
-        # Sort claims by confidence (high → medium → low)
-        claims_sorted <- claims_filtered
-        claims_sorted$confidence <- factor(claims_sorted$confidence, levels = c("high", "medium", "low"))
-        claims_sorted <- claims_sorted[order(claims_sorted$confidence), ]
-
-        # Build HTML for each claim
-        claim_html <- lapply(seq_len(nrow(claims_sorted)), function(i) {
-          row <- claims_sorted[i, ]
-
-          # Color code by confidence level
-          conf <- as.character(row$confidence[1])
-          quality_color <- switch(conf,
-            "high" = "#27ae60",
-            "medium" = "#f39c12",
-            "low" = "#e74c3c",
-            "#95a5a6"
-          )
-
-          # Build the claim card
-          div(
-            style = "margin-bottom: 20px; padding: 15px; border-left: 4px solid #3498db; background-color: #f8f9fa; border-radius: 4px;",
-            h4(sprintf("Claim %d: %s → %s", i, row$source, row$target),
-               style = "margin-top: 0; color: #2c3e50;"),
-
-            p(strong("Claim: "), row$claim, style = "margin: 8px 0;"),
-
-            div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;",
-              p(strong("Type: "), row$claim_type, style = "margin: 0;"),
-              p(strong("Confidence: "), span(row$confidence, style = paste0("background: ", quality_color, "; color: white; padding: 2px 6px; border-radius: 3px;")), style = "margin: 0;"),
-              p(strong("Pathway: "), row$pathway, style = "margin: 0;"),
-              p(strong("Established: "), if(isTRUE(row$established)) "Yes" else "No", style = "margin: 0;")
-            ),
-
-            div(style = "background: white; padding: 10px; border-radius: 3px; margin: 10px 0;",
-              p(strong("Statistics:"), style = "margin-top: 0;"),
-              p(sprintf("Effect Size: %s", row$effect_size), style = "margin: 4px 0; font-size: 0.95em;"),
-              p(sprintf("P-Value: %s", row$p_value), style = "margin: 4px 0; font-size: 0.95em;"),
-              p(sprintf("Sample Size: %s", row$sample_size), style = "margin: 4px 0; font-size: 0.95em;")
-            ),
-
-            if (!is.na(row$evidence) && row$evidence != "") {
-              div(style = "margin: 10px 0; padding: 10px; background: #e8f4f8; border-radius: 3px;",
-                p(strong("Evidence Details:"), style = "margin: 0 0 4px 0;"),
-                p(row$evidence, style = "margin: 0; color: #333; font-size: 0.95em;")
-              )
-            },
-
-            if (!is.na(row$notes) && row$notes != "") {
-              div(style = "margin: 10px 0;",
-                p(strong("Notes & Qualifications:"), style = "margin: 0 0 4px 0; color: #c0392b;"),
-                p(row$notes, style = "margin: 0; color: #555; font-size: 0.95em;")
-              )
-            }
-          )
-        })
-
-        div(
-          h3("Detailed Causal Claims Analysis", style = "color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px;"),
-          do.call(div, claim_html)
-        )
-      })
-
-      # Display raw response for debugging
-      output$raw_claims <- renderText(raw_resp)
-
-    }, error = function(e) {
-      output$status <- renderText(paste("❌ Error:", e$message))
-    })
-  })
-
-  # STEP 1.5: Run critique analysis
-  observeEvent(input$critique_btn, {
-    req(claims_df())
-
-    if (nrow(claims_df()) == 0) {
-      output$critique_output <- renderUI(
-        p("❌ No claims available. Extract claims first.", style = "color: #e74c3c;")
-      )
-      return()
-    }
-
-    output$critique_output <- renderUI(
-      p("⏳ Running critique analysis... this may take 1-2 minutes", style = "color: #f39c12;")
-    )
-
-    tryCatch({
-      # Run critique on all claims
-      critiqued <- withProgress(
-        message = "Running critique analysis…",
-        detail  = sprintf("Evaluating %d claims with GPT-4-turbo", nrow(claims_df())),
-        value   = 0.5, {
-          cauda::cauda.critique(claims_df(), verbose = TRUE)
-        }
-      )
-      critique_df(critiqued)
-
-      # Render critique output
-      output$critique_output <- renderUI({
-        render_critique_results(critiqued)
-      })
-
-    }, error = function(e) {
-      output$critique_output <- renderUI(
-        p(paste("❌ Error running critique:", e$message), style = "color: #e74c3c;")
-      )
-    })
-  })
-
-  # STEP 1.75: Generate synthesis report
-  observeEvent(input$synthesis_btn, {
-    req(claims_df())
-    req(critique_df())
-
-    if (nrow(claims_df()) == 0 || is.null(critique_df())) {
-      output$synthesis_output <- renderUI(
-        p("❌ Run Extract Claims and Critique Analysis first.", style = "color: #e74c3c;")
-      )
-      return()
-    }
-
-    output$synthesis_output <- renderUI(
-      p("⏳ Generating synthesis report...", style = "color: #f39c12;")
-    )
-
-    tryCatch({
-      # Generate synthesis
-      synthesis <- withProgress(
-        message = "Generating synthesis report…",
-        detail  = "Calling GPT-4o-mini",
-        value   = 0.5, {
-          cauda::cauda.synthesize(
-            pdf_text(),
-            claims_df(),
-            critique_df(),
-            verbose = TRUE
-          )
-        }
-      )
-      synthesis_results(synthesis)
-
-      # Render synthesis
-      output$synthesis_output <- renderUI({
-        render_synthesis_report(synthesis, claims_df(), critique_df())
-      })
-
-    }, error = function(e) {
-      output$synthesis_output <- renderUI(
-        p(paste("❌ Error generating synthesis:", e$message), style = "color: #e74c3c;")
-      )
-    })
-  })
-
-  # STEP 2: Generate DAG from extracted claims
-  observeEvent(input$dag_btn, {
-    req(claims_df())
-
-    if (nrow(claims_df()) == 0) {
-      output$status <- renderText("❌ No claims available. Extract claims first.")
-      return()
-    }
-
-    output$status <- renderText("⏳ Generating causal DAG...")
-
-    tryCatch({
-      # Create DAG from claims using cauda function
-      dag <- cauda::cauda.claims_to_dag(
-        claims_df(),
-        confidence_threshold = "low",
-        include_speculative = TRUE,
-        verbose = TRUE
-      )
-
-      dag_obj(dag)
-      output$status <- renderText("✓ DAG generated successfully!")
-
-      # Plot the DAG
       output$dag_plot <- renderPlot({
-        if (is.null(dag_obj())) {
-          return(NULL)
-        }
-
-        # Use cauda's DAG plotting function
-        tryCatch({
-          cauda::cauda.dag_theory(dag_obj(), verbose = TRUE)
-        }, error = function(e) {
-          # Fallback to basic bnlearn plotting
-          plot(dag_obj(), main = "Causal DAG from Extracted Claims")
-        })
+        tryCatch(
+          cauda::cauda.dag_theory(new_dag, verbose=FALSE),
+          error = function(e) {
+            plot(new_dag, main="Causal DAG")
+          }
+        )
       })
 
-      # Display DAG summary
       output$dag_summary <- renderPrint({
-        if (is.null(dag_obj())) {
-          cat("DAG not yet generated.\n")
-          return()
-        }
-
-        dag <- dag_obj()
-        cat("=== DAG Summary ===\n")
-        cat("Nodes:", length(bnlearn::nodes(dag)), "\n")
-        cat("Edges:", nrow(bnlearn::arcs(dag)), "\n")
-        cat("\nEdges:\n")
-        print(bnlearn::arcs(dag))
-        cat("\n")
+        cat("Nodes:", length(bnlearn::nodes(new_dag)), "\n")
+        cat("Edges:", nrow(bnlearn::arcs(new_dag)), "\n\n")
+        cat("Edge list:\n")
+        print(edge_metadata[, c("from_display", "to_display", "pathway")])
       })
 
     }, error = function(e) {
-      output$status <- renderText(paste("❌ Error generating DAG:", e$message))
+      output$dag_plot <- renderPlot({
+        plot(1, type="n", axes=FALSE)
+        text(1, 1, paste("DAG error:", e$message), cex=1, col="red")
+      })
     })
-  })
-
-  # Initialize empty outputs
-  output$status <- renderText("📄 Upload a PDF to get started")
-  output$claims_table <- renderTable(
-    data.frame(Step = "1. Upload PDF", Action = "Select a research paper"),
-    width = "100%"
-  )
-  output$dag_plot <- renderPlot({
-    plot(1, type = "n", axes = FALSE, main = "DAG will appear here")
-    text(1, 1, "Generate claims first", cex = 1.5, col = "gray")
-  })
-  output$dag_summary <- renderPrint({
-    cat("DAG not yet generated. Extract claims and click 'Generate DAG'.\n")
-  })
-  output$raw_claims <- renderText("Raw GPT-4-turbo response will appear here")
-  output$parsed_claims_output <- renderPrint({
-    cat("Parsed claims dataframe will appear here\n")
-  })
-  output$detailed_claims <- renderUI({
-    div(p("Detailed claims analysis will appear here after extraction.", style = "color: #666; font-style: italic;"))
-  })
-  output$critique_output <- renderUI({
-    div(p("Click 'Run Critique Analysis' to evaluate claims.", style = "color: #666; font-style: italic;"))
-  })
-  output$synthesis_output <- renderUI({
-    div(p("Click 'Generate Synthesis Report' after running critique.", style = "color: #666; font-style: italic;"))
-  })
-
-  # Download synthesis report
-  output$download_synthesis <- downloadHandler(
-    filename = function() {
-      paste0("synthesis_report_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".txt")
-    },
-    content = function(file) {
-      req(synthesis_results())
-
-      synthesis <- synthesis_results()
-      report_text <- paste0(
-        "CAUDA: MULTI-MODULE SYNTHESIS REPORT\n",
-        "====================================\n",
-        "Generated: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n\n",
-
-        "PAPER SUMMARY\n",
-        "=============\n",
-        synthesis$summary, "\n\n",
-
-        "KEY STRENGTHS\n",
-        "=============\n",
-        synthesis$key_strengths, "\n\n",
-
-        "KEY LIMITATIONS\n",
-        "===============\n",
-        synthesis$key_limitations, "\n\n",
-
-        "CONFOUNDERS & ALTERNATIVES\n",
-        "===========================\n",
-        paste(synthesis$confounder_summary$confounder, "(",
-              synthesis$confounder_summary$frequency, "claims)", collapse = "\n"), "\n\n",
-
-        "BOTTOM-LINE APPRAISAL\n",
-        "====================\n",
-        synthesis$bottom_line, "\n\n",
-
-        "END OF REPORT\n"
-      )
-
-      writeLines(report_text, file)
-    }
-  )
-}
-
-# Helper: convert a dataframe to an HTML table (safe to use inside renderUI)
-df_to_html_table <- function(df) {
-  if (is.null(df) || nrow(df) == 0) return(p("No data available.", style = "color: #666;"))
-  header <- tags$tr(lapply(colnames(df), function(col) {
-    tags$th(col, style = "padding: 6px 12px; background: #ecf0f1; font-weight: bold; border: 1px solid #ddd; text-align: left;")
-  }))
-  body_rows <- lapply(seq_len(nrow(df)), function(i) {
-    bg <- if (i %% 2 == 0) "#f9f9f9" else "white"
-    tags$tr(lapply(seq_len(ncol(df)), function(j) {
-      tags$td(as.character(df[i, j]), style = paste0("padding: 6px 12px; border: 1px solid #ddd; background: ", bg, ";"))
-    }))
-  })
-  tags$table(style = "border-collapse: collapse; width: 100%; font-size: 0.9em;",
-    tags$thead(header),
-    tags$tbody(body_rows)
-  )
-}
-
-# Helper function to render synthesis report
-render_synthesis_report <- function(synthesis, claims, critique) {
-  div(
-    # RED FLAG: Confidence vs Support Mismatches
-    if (isTRUE(synthesis$mismatches$has_mismatches)) {
-      div(
-        style = "margin-bottom: 30px; padding: 20px; background-color: #ffe8e8; border-left: 5px solid #c0392b; border-radius: 4px;",
-        h3("Confidence vs Support Mismatches", style = "margin-top: 0; color: #c0392b;"),
-        p(sprintf("%d claims rated HIGH confidence but critique found WEAK or QUESTIONABLE support:",
-                  synthesis$mismatches$count),
-          style = "font-weight: bold; margin: 10px 0;"),
-        df_to_html_table(
-          synthesis$mismatches$flag_claims[, c("claim_id", "source", "target", "original_confidence", "actual_support")]
-        ),
-        p("These claims need closer scrutiny before relying on them.",
-          style = "margin-top: 10px; font-style: italic; color: #555;")
-      )
-    },
-
-    # Support Matrix
-    div(
-      style = "margin-bottom: 30px; padding: 20px; background-color: #f0f8ff; border-left: 4px solid #2196F3; border-radius: 4px;",
-      h3("Support Matrix: Claims by Evidence Level", style = "margin-top: 0; color: #2c3e50;"),
-      {
-        matrix_data <- synthesis$cross_module_consistency$support_matrix
-        display_matrix <- data.frame(
-          ID = matrix_data$claim_id,
-          Source = substr(matrix_data$source, 1, 20),
-          Target = substr(matrix_data$target, 1, 20),
-          Support = matrix_data$support,
-          stringsAsFactors = FALSE
-        )
-        df_to_html_table(display_matrix)
-      }
-    ),
-
-    # Summary
-    div(
-      style = "margin-bottom: 30px; padding: 20px; background-color: #e8f4f8; border-left: 4px solid #3498db; border-radius: 4px;",
-      h3("Paper Summary", style = "margin-top: 0; color: #2c3e50;"),
-      p(synthesis$summary, style = "font-size: 0.95em; line-height: 1.6;")
-    ),
-
-    # Key Strengths
-    div(
-      style = "margin-bottom: 30px; padding: 20px; background-color: #e8f8e8; border-left: 4px solid #27ae60; border-radius: 4px;",
-      h3("Key Strengths & Better-Supported Conclusions", style = "margin-top: 0; color: #2c3e50;"),
-      p(synthesis$key_strengths, style = "font-size: 0.95em; line-height: 1.6; white-space: pre-wrap;")
-    ),
-
-    # Key Limitations
-    div(
-      style = "margin-bottom: 30px; padding: 20px; background-color: #fff8e8; border-left: 4px solid #f39c12; border-radius: 4px;",
-      h3("Key Limitations, Gaps, and Caveats", style = "margin-top: 0; color: #2c3e50;"),
-      p(synthesis$key_limitations, style = "font-size: 0.95em; line-height: 1.6; white-space: pre-wrap;")
-    ),
-
-    # Claims Appraisal Table
-    div(
-      style = "margin-bottom: 30px;",
-      h3("Claims Appraisal Table", style = "color: #2c3e50;"),
-      {
-        appraisal <- synthesis$claims_appraisal
-        display_appraisal <- data.frame(
-          Claim = seq_len(nrow(appraisal)),
-          Source = substr(appraisal$source, 1, 15),
-          Target = substr(appraisal$target, 1, 15),
-          Strength = appraisal$causal_strength,
-          Support = appraisal$support_category,
-          Conf_Orig = appraisal$confidence_original,
-          Conf_Adj = appraisal$confidence_adjusted,
-          stringsAsFactors = FALSE
-        )
-        df_to_html_table(display_appraisal)
-      }
-    ),
-
-    # Bottom-Line Appraisal
-    div(
-      style = "margin-bottom: 30px; padding: 20px; background-color: #fef5f5; border-left: 4px solid #e74c3c; border-radius: 4px;",
-      h3("Bottom-Line Appraisal", style = "margin-top: 0; color: #2c3e50;"),
-      p(synthesis$bottom_line, style = "font-size: 0.95em; line-height: 1.6; white-space: pre-wrap;")
-    )
-  )
-}
-
-# Helper function to render critique results
-render_critique_results <- function(critique_df) {
-  if (nrow(critique_df) == 0) {
-    return(div(p("No critique results available.")))
   }
 
-  critique_html <- lapply(seq_len(nrow(critique_df)), function(i) {
-    row <- critique_df[i, ]
+  # ── Download synthesis ────────────────────────────────────────────────────
+  output$download_synthesis <- downloadHandler(
+    filename = function() paste0("synthesis_", format(Sys.time(),"%Y%m%d_%H%M%S"), ".txt"),
+    content  = function(file) {
+      req(synthesis_res())
+      s <- synthesis_res()
+      writeLines(paste0(
+        "CAUDA SYNTHESIS REPORT\n",
+        "Generated: ", format(Sys.time(),"%Y-%m-%d %H:%M:%S"), "\n\n",
+        "SUMMARY\n=======\n", s$summary, "\n\n",
+        "STRENGTHS\n=========\n", s$key_strengths, "\n\n",
+        "LIMITATIONS\n===========\n", s$key_limitations, "\n\n",
+        "BOTTOM LINE\n===========\n", s$bottom_line, "\n"
+      ), file)
+    }
+  )
 
-    # Color code causal strength
-    strength_color <- switch(row$causal_strength,
-      "strong" = "#27ae60",
-      "moderate" = "#f39c12",
-      "weak" = "#e74c3c",
-      "#95a5a6"
-    )
-
-    # Color code support
-    support_color <- switch(row$support_summary,
-      "well_supported" = "#27ae60",
-      "partly_supported" = "#f39c12",
-      "questionable" = "#e74c3c",
-      "#95a5a6"
-    )
-
-    div(
-      style = "margin-bottom: 20px; padding: 15px; border-left: 4px solid #e74c3c; background-color: #fef5f5; border-radius: 4px;",
-      h4(sprintf("Claim %d: %s → %s", i, row$source, row$target),
-         style = "margin-top: 0; color: #2c3e50;"),
-
-      div(style = "display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0;",
-        p(strong("Causal Strength: "), span(row$causal_strength, style = paste0("background: ", strength_color, "; color: white; padding: 2px 6px; border-radius: 3px;")), style = "margin: 0;"),
-        p(strong("Support: "), span(row$support_summary, style = paste0("background: ", support_color, "; color: white; padding: 2px 6px; border-radius: 3px;")), style = "margin: 0;"),
-        p(strong("Adjusted Confidence: "), row$confidence_adjusted, style = "margin: 0;"),
-        p(strong("Original Confidence: "), row$confidence, style = "margin: 0;")
-      ),
-
-      if (!is.na(row$critique) && row$critique != "") {
-        div(style = "background: white; padding: 10px; border-radius: 3px; margin: 10px 0;",
-          p(strong("Critique:"), style = "margin-top: 0;"),
-          p(row$critique, style = "margin: 4px 0; font-size: 0.95em; color: #333;")
-        )
-      },
-
-      if (!is.na(row$key_gaps) && row$key_gaps != "") {
-        div(style = "margin: 10px 0; padding: 10px; background: #fff3cd; border-radius: 3px;",
-          p(strong("Critical Evidence Gaps:"), style = "margin: 0 0 4px 0; color: #c0392b;"),
-          p(row$key_gaps, style = "margin: 0; color: #555; font-size: 0.95em;")
-        )
-      }
-    )
+  # ── Debug ─────────────────────────────────────────────────────────────────
+  output$raw_claims         <- renderText(raw_response() %||% "No response yet.")
+  output$parsed_claims_output <- renderPrint({
+    df <- all_claims()
+    if (is.null(df)) cat("No claims yet.\n") else print(df)
   })
 
+  # ── Initial placeholders ──────────────────────────────────────────────────
+  output$status_ui      <- renderUI(p("📄 Upload PDF(s) to get started."))
+  output$detailed_claims <- renderUI(p("Extract claims first.", style="color:#666;"))
+  output$critique_output <- renderUI(p("Run critique after extracting.", style="color:#666;"))
+  output$synthesis_output<- renderUI(p("Run synthesis after critique.", style="color:#666;"))
+  output$dag_plot <- renderPlot({
+    plot(1,type="n",axes=FALSE,main="DAG will appear here")
+    text(1,1,"Build DAG from Claims",cex=1.5,col="gray")
+  })
+  output$dag_summary <- renderPrint(cat("DAG not yet generated.\n"))
+}
+
+
+# ── Helper: critique render ───────────────────────────────────────────────────
+render_critique_results <- function(crit) {
+  if (is.null(crit) || nrow(crit) == 0) return(p("No critique results."))
+  rows <- lapply(seq_len(nrow(crit)), function(i) {
+    r <- crit[i,]
+    sc <- switch(r$causal_strength %||% "",
+      strong="badge-high", moderate="badge-med", weak="badge-low", "badge-low")
+    div(style="margin-bottom:16px; padding:12px; border-left:4px solid #e74c3c;
+               background:#fef5f5; border-radius:4px;",
+      h5(paste0(r$source," → ",r$target), style="margin:0 0 6px;"),
+      div(style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;",
+        span(r$causal_strength %||% "?", class=paste("badge",sc)),
+        span(r$support_summary %||% "?", class="badge",
+             style="background:#3498db;"),
+        span(paste("adj:", r$confidence_adjusted %||% "?"),
+             class="badge", style="background:#555;")
+      ),
+      if (!is.na(r$critique) && r$critique != "")
+        p(r$critique, style="font-size:0.9em; margin:4px 0;"),
+      if (!is.na(r$key_gaps) && r$key_gaps != "")
+        div(style="margin-top:6px; padding:8px; background:#fff3cd; border-radius:3px;
+                   font-size:0.88em;",
+          strong("Gaps: "), r$key_gaps)
+    )
+  })
+  div(h4("Critique Results",
+         style="border-bottom:2px solid #e74c3c; padding-bottom:8px;"),
+      do.call(div, rows))
+}
+
+
+# ── Helper: synthesis render ──────────────────────────────────────────────────
+render_synthesis_report <- function(s, claims, crit) {
   div(
-    h3("Critique & Evidence Assessment", style = "color: #2c3e50; border-bottom: 2px solid #e74c3c; padding-bottom: 10px;"),
-    do.call(div, critique_html)
+    div(style="padding:16px; background:#e8f4f8; border-left:4px solid #3498db;
+               border-radius:4px; margin-bottom:20px;",
+      h4("Summary", style="margin-top:0;"), p(s$summary)),
+    div(style="padding:16px; background:#e8f8e8; border-left:4px solid #27ae60;
+               border-radius:4px; margin-bottom:20px;",
+      h4("Strengths", style="margin-top:0;"), p(s$key_strengths, style="white-space:pre-wrap;")),
+    div(style="padding:16px; background:#fff8e8; border-left:4px solid #f39c12;
+               border-radius:4px; margin-bottom:20px;",
+      h4("Limitations", style="margin-top:0;"), p(s$key_limitations, style="white-space:pre-wrap;")),
+    div(style="padding:16px; background:#fef5f5; border-left:4px solid #e74c3c;
+               border-radius:4px;",
+      h4("Bottom Line", style="margin-top:0;"), p(s$bottom_line, style="white-space:pre-wrap;"))
   )
 }
 
-# Run the app
+
+`%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
+
 shinyApp(ui, server)
