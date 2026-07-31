@@ -94,7 +94,7 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
 
   to_display <- function(x) {
     if (use_display_names && !is.null(display_lookup)) {
-      out <- display_lookup[x]
+      out <- unname(display_lookup[x])
       ifelse(is.na(out), x, out)
     } else x
   }
