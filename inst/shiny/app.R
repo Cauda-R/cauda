@@ -454,6 +454,12 @@ server <- function(input, output, session) {
   })
 
   # ── Add edge ──────────────────────────────────────────────────────────────
+  # NOTE: add/reverse/delete all call replot_dag() themselves at the end, so
+  # the DAG plot updates immediately after each edit. Previously only the
+  # separate "Replot DAG" button triggered a redraw, so add/reverse/delete
+  # silently changed the edge list without ever touching the plot — it looked
+  # like editing did nothing. (Fixed 2026-07-31.) "Replot DAG" is kept as a
+  # manual fallback/refresh button.
   observeEvent(input$add_edge_btn, {
     f <- trimws(input$edge_from)
     t <- trimws(input$edge_to)
@@ -464,6 +470,7 @@ server <- function(input, output, session) {
       custom_edges(rbind(edges, data.frame(from=f, to=t, pathway="unknown", stringsAsFactors=FALSE)))
     updateTextInput(session, "edge_from", value="")
     updateTextInput(session, "edge_to",   value="")
+    replot_dag()
   })
 
   # ── Reverse edge ──────────────────────────────────────────────────────────
@@ -475,6 +482,7 @@ server <- function(input, output, session) {
     edges$from[sel] <- edges$to[sel]
     edges$to[sel]   <- tmp
     custom_edges(edges)
+    replot_dag()
   })
 
   # ── Delete edge ───────────────────────────────────────────────────────────
@@ -484,9 +492,10 @@ server <- function(input, output, session) {
     if (is.null(sel) || is.null(edges) || sel > nrow(edges)) return()
     custom_edges(edges[-sel, , drop=FALSE])
     selected_edge(NULL)
+    replot_dag()
   })
 
-  # ── Replot ────────────────────────────────────────────────────────────────
+  # ── Replot (manual refresh button, kept as fallback) ───────────────────────
   observeEvent(input$replot_btn, replot_dag())
 
   replot_dag <- function() {
@@ -678,8 +687,13 @@ server <- function(input, output, session) {
   })
 
   # ── Initial placeholders ──────────────────────────────────────────────────
+  # NOTE: output$detailed_claims is intentionally NOT reset here — it already
+  # has a real reactive renderUI() bound above (driven by filtered_claims())
+  # that handles the "no claims yet" case itself. Re-assigning it here would
+  # overwrite that reactive binding with a static, never-updating placeholder,
+  # permanently pinning the tab to "Extract claims first." even after claims
+  # are extracted. (This was a real bug, fixed 2026-07-31.)
   output$status_ui      <- renderUI(p("📄 Upload PDF(s) to get started."))
-  output$detailed_claims <- renderUI(p("Extract claims first.", style="color:#666;"))
   output$critique_output <- renderUI(p("Run critique after extracting.", style="color:#666;"))
   output$synthesis_output<- renderUI(p("Run synthesis after critique.", style="color:#666;"))
   output$dag_plot <- renderPlot({
