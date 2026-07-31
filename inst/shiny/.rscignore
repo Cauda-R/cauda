@@ -1,1 +1,8 @@
-.Renviron
+# NOTE: .Renviron is intentionally NOT excluded here.
+# shinyapps.io has no environment-variable / secrets manager at all (confirmed
+# via Posit staff on the community forum, Nov 2024 - that feature only exists
+# on Connect/Connect Cloud, not shinyapps.io). Bundling .Renviron into the
+# deploy is the only way this app's OPENAI_API_KEY reaches production.
+# .Renviron is still git-ignored (see .gitignore) so it never touches the
+# public GitHub repo - the only place it lives besides this machine is the
+# private shinyapps.io deploy bundle, which is not public.
