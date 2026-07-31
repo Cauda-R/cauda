@@ -1747,19 +1747,45 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
 
     return(x)
   }
-  # Truncate very long display names before wrapping (keeps circles readable)
+  # Truncate very long display names before wrapping (keeps circles readable).
+  # Truncation length and everything below (font size, node size, spacing)
+  # now scales with node count — a 5-node DAG can afford large bold text and
+  # roomy circles, but a 20-node DAG needs much smaller text and tighter
+  # circles or every label bleeds into its neighbors. Fixed sizes (previously
+  # cex=1.45, vertex.size=48 always) is what caused the "text overlapping /
+  # too big for the circle" look once graphs grew past ~8-10 nodes.
+  n_nodes <- length(node_names)
+  trunc_len <- if (n_nodes <= 8) 30 else if (n_nodes <= 14) 22 else 16
   display_node_names <- ifelse(
-    nchar(display_node_names) > 30,
-    paste0(substr(display_node_names, 1, 28), "…"),
+    nchar(display_node_names) > trunc_len,
+    paste0(substr(display_node_names, 1, trunc_len - 2), "…"),
     display_node_names
   )
-  wrapped_labels <- sapply(display_node_names, wrap_label)
 
-  # Layout with graphopt
+  # Cap wrapped labels at 3 lines max (join any extra words onto the last
+  # line) so text height never grows past what a small/medium circle holds.
+  wrap_label_capped <- function(x) {
+    wrapped <- wrap_label(x)
+    lines <- strsplit(wrapped, "\n")[[1]]
+    if (length(lines) > 3) {
+      lines <- c(lines[1:2], paste(lines[3:length(lines)], collapse = " "))
+    }
+    paste(lines, collapse = "\n")
+  }
+  wrapped_labels <- sapply(display_node_names, wrap_label_capped)
+
+  # Scale font size and node size inversely with node count.
+  label_cex   <- max(0.5, min(1.15, 11 / n_nodes))
+  vertex_size <- max(24, min(46, 420 / n_nodes))
+
+  # Layout with graphopt — higher charge/repulsion pushes nodes further
+  # apart as the graph grows, which is what actually stops neighboring
+  # labels from overlapping (font size alone can't fix crowded layouts).
+  charge <- min(0.35, 0.08 + 0.01 * n_nodes)
   set.seed(42)
   layout_coords <- igraph::layout_with_graphopt(
-    g, niter = 2000,
-    charge = 0.08,
+    g, niter = 3000,
+    charge = charge,
     spring.length = 0,
     spring.constant = 0.01
   )
@@ -1772,29 +1798,29 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   par(mar = c(1, 1, 3, 1), bg = "white")
 
   # Plot with pathway colors and edge styles
-  # Enhanced styling: opaque circles, LARGE text (wrapped), thick colored edges
+  # Enhanced styling: opaque circles, wrapped text sized to fit, thick colored edges
   plot(
     g,
     layout             = layout_coords,
     vertex.label       = wrapped_labels,
-    vertex.size        = 48,
+    vertex.size        = vertex_size,
     vertex.color       = node_colors,
-    vertex.label.cex   = 1.45,
+    vertex.label.cex   = label_cex,
     vertex.label.color = "black",
     vertex.label.font  = 2,
     vertex.label.dist  = 0,
     vertex.label.degree = -pi/2,
     vertex.frame.color = "black",
-    vertex.frame.width = 3.6,
-    edge.arrow.size    = 0.7,
+    vertex.frame.width = 2.4,
+    edge.arrow.size    = 0.6,
     edge.color         = adjustcolor(edge_colors, alpha.f = 0.8),
     edge.lty           = edge_styles,
-    edge.width         = edge_widths * 3.5,
+    edge.width         = edge_widths * 3,
     edge.curved        = 0.25,
     rescale            = FALSE,
     asp                = 0,
-    xlim               = c(-1.25, 1.25),
-    ylim               = c(-1.25, 1.25),
+    xlim               = c(-1.3, 1.3),
+    ylim               = c(-1.3, 1.3),
     main               = "Theory DAG: Causal Claims from Scientific Papers"
   )
 

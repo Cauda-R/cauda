@@ -118,7 +118,13 @@ cauda.critique <- function(claims, verbose = TRUE) {
 
     if (httr::status_code(response) != 200) {
       err_body <- httr::content(response, as = "text", encoding = "UTF-8")
-      warning(sprintf("Batch critique API error: status %d\n%s", httr::status_code(response), err_body))
+      err_parsed <- tryCatch(jsonlite::fromJSON(err_body), error = function(e) NULL)
+      err_msg <- if (!is.null(err_parsed$error$message)) err_parsed$error$message else err_body
+      # NOTE: this used to be a warning(), so the critique silently returned
+      # with every field NA and the Shiny app rendered blank-looking cards
+      # with no indication anything had failed. Stop with a clear message so
+      # the caller's tryCatch (app.R) can show a real error to the user.
+      stop(sprintf("OpenAI API error (%d): %s", httr::status_code(response), err_msg))
     } else {
       response_text <- httr::content(response, as = "text", encoding = "UTF-8")
       result <- jsonlite::fromJSON(response_text, simplifyVector = FALSE)
@@ -157,6 +163,11 @@ cauda.critique <- function(claims, verbose = TRUE) {
 
   }, error = function(e) {
     if (verbose) cat(sprintf("Error in batch critique: %s\n", conditionMessage(e)))
+    # Re-throw (instead of swallowing) so the caller — the Shiny app's
+    # observeEvent(input$critique_btn) tryCatch — actually finds out the
+    # critique failed and can show a real error instead of silently
+    # returning claims with every critique field left NA.
+    stop(e)
   })
 
   if (verbose) cat("Critique complete.\n")

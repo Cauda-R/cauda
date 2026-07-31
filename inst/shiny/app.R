@@ -24,6 +24,29 @@ ui <- fluidPage(
                    background:#2c3e50; color:white; font-size:0.78em; margin-right:5px; }
     .edge-row    { padding:6px 10px; border-bottom:1px solid #eee; }
     .edge-row:hover { background:#f0f0f0; }
+
+    .ci-card     { display:flex; align-items:center; flex-wrap:wrap; gap:8px;
+                   margin-bottom:10px; padding:12px 16px; background:#f8f9fa;
+                   border-left:4px solid #16a085; border-radius:4px; }
+    .ci-var      { display:inline-block; padding:3px 10px; border-radius:4px;
+                   background:#eaf2f8; border:1px solid #aed6f1; color:#1a5276;
+                   font-family:'SFMono-Regular',Consolas,monospace; font-weight:600;
+                   font-size:0.92em; }
+    .ci-symbol   { color:#888; font-weight:700; font-size:1.05em; }
+    .ci-cond-label { color:#888; font-size:0.85em; margin-left:4px; }
+    .ci-cond-chip { display:inline-block; padding:2px 8px; margin:0 2px; border-radius:10px;
+                   background:#fdf2e9; border:1px solid #f5cba7; color:#935116;
+                   font-size:0.82em; }
+    .ci-cond-none { color:#aaa; font-size:0.85em; font-style:italic; }
+    .dagitty-toggle { cursor:pointer; color:#3498db; font-size:0.85em; margin:6px 0 14px; }
+    .dagitty-box { background:#2c3e50; color:#ecf0f1; padding:12px 16px; border-radius:4px;
+                   font-family:'SFMono-Regular',Consolas,monospace; font-size:0.82em;
+                   white-space:pre-wrap; margin-bottom:14px; }
+    .theory-card { margin-bottom:14px; padding:14px 16px; background:#f8f9fa;
+                   border-left:4px solid #8e44ad; border-radius:4px; }
+    .theory-badge{ display:inline-block; padding:3px 10px; border-radius:10px;
+                   color:white; font-size:0.82em; font-weight:600; margin-right:8px; }
+    .empty-hint  { color:#888; font-style:italic; padding:10px 0; }
   ")),
 
   sidebarLayout(
@@ -100,7 +123,7 @@ ui <- fluidPage(
           br(),
           fluidRow(
             column(8,
-              plotOutput("dag_plot", height = "550px")
+              plotOutput("dag_plot", height = "680px")
             ),
             column(4,
               h5("Edit DAG Edges"),
@@ -130,20 +153,25 @@ ui <- fluidPage(
         # ── TESTABLE IMPLICATIONS (DAGitty) ────────────────────────────────
         tabPanel("Testable Implications",
           br(),
-          h5("From current DAG"),
+          p("Derives the conditional independencies your current DAG implies — the ",
+            "predictions that MUST hold in real data if this causal theory is correct. ",
+            "These are the concrete things to go test.", style = "font-size:12px; color:#888;"),
           actionButton("dagitty_btn", "Derive Testable Implications", class = "btn-sm btn-primary"),
           downloadButton("download_dagitty_string", "Download dagitty model (.txt)", class = "btn-sm btn-success"),
           br(), br(),
-          verbatimTextOutput("dagitty_implications"),
-          hr(),
-          h5("Compare papers as competing theories"),
+          uiOutput("dagitty_implications")
+        ),
+
+        # ── COMPARE THEORIES ────────────────────────────────────────────────
+        tabPanel("Compare Theories",
+          br(),
           p("Builds one candidate DAG per uploaded paper (paper = theory) and flags which ",
             "testable implications are unique to a single paper's theory — the most useful ",
             "place to start testing against data, since a shared implication can't tell the ",
             "theories apart.", style = "font-size:12px; color:#888;"),
           actionButton("compare_theories_btn", "Compare Papers as Competing Theories", class = "btn-sm btn-warning"),
           br(), br(),
-          tableOutput("discriminating_table")
+          uiOutput("discriminating_table")
         ),
 
         # ── DEBUG ───────────────────────────────────────────────────────────
@@ -228,14 +256,27 @@ server <- function(input, output, session) {
       all_claims(combined)
       custom_edges(NULL)
       dag_obj(NULL)
-
-      output$status_ui <- renderUI(
-        p(sprintf("✓ Extracted %d claims from %d paper(s). Ready to build DAG.",
-                  nrow(combined), length(texts)),
-          style = "color:#27ae60; font-weight:bold;")
-      )
-
       raw_response(attr(combined, "raw_response") %||% "")
+
+      if (nrow(combined) == 0) {
+        # Every paper failed extraction (cauda.extract_multi() catches
+        # per-paper errors and only logs them server-side via message()),
+        # so this used to render a cheerful green "Extracted 0 claims"
+        # success message that hid a real failure (e.g. OpenAI API key
+        # missing/invalid, or account out of credits). Show it as an error.
+        output$status_ui <- renderUI(
+          p("❌ Extraction failed for every paper (0 claims). This usually means the ",
+            "OpenAI API key is missing/invalid or the account is out of credits — ",
+            "check the Debug tab or server logs for the underlying error.",
+            style = "color:#e74c3c; font-weight:bold;")
+        )
+      } else {
+        output$status_ui <- renderUI(
+          p(sprintf("✓ Extracted %d claims from %d paper(s). Ready to build DAG.",
+                    nrow(combined), length(texts)),
+            style = "color:#27ae60; font-weight:bold;")
+        )
+      }
 
     }, error = function(e) {
       output$status_ui <- renderUI(
@@ -600,23 +641,8 @@ server <- function(input, output, session) {
     })
   })
 
-  output$dagitty_implications <- renderPrint({
-    res <- dagitty_res()
-    if (is.null(res)) {
-      cat("Build a DAG in the 'Causal DAG' tab first, then click 'Derive Testable Implications'.\n")
-      return(invisible())
-    }
-    cat("dagitty model (paste into https://dagitty.net for interactive editing):\n\n")
-    cat(res$dagitty_string, "\n\n")
-    cat("Implied conditional independencies (", res$n_implications, "):\n\n", sep = "")
-    if (res$n_implications == 0) {
-      cat("  (none — DAG is saturated, or too small to imply any conditional independence)\n")
-    } else {
-      for (i in seq_len(nrow(res$implied_CIs))) {
-        r <- res$implied_CIs[i, ]
-        cat(sprintf("  %s  _||_  %s   |   {%s}\n", r$X, r$Y, r$Z))
-      }
-    }
+  output$dagitty_implications <- renderUI({
+    render_dagitty_implications(dagitty_res())
   })
 
   output$download_dagitty_string <- downloadHandler(
@@ -655,12 +681,9 @@ server <- function(input, output, session) {
     })
   })
 
-  output$discriminating_table <- renderTable({
-    cmp <- theory_cmp()
-    if (is.null(cmp) || is.null(cmp$discriminating) || nrow(cmp$discriminating) == 0)
-      return(data.frame(Message = "No comparison yet, or no discriminating implications found."))
-    cmp$discriminating[, c("theory", "X", "Y", "Z")]
-  }, striped = TRUE, hover = TRUE, width = "100%")
+  output$discriminating_table <- renderUI({
+    render_theory_comparison(theory_cmp())
+  })
 
   # ── Download synthesis ────────────────────────────────────────────────────
   output$download_synthesis <- downloadHandler(
@@ -750,6 +773,101 @@ render_synthesis_report <- function(s, claims, crit) {
     div(style="padding:16px; background:#fef5f5; border-left:4px solid #e74c3c;
                border-radius:4px;",
       h4("Bottom Line", style="margin-top:0;"), p(s$bottom_line, style="white-space:pre-wrap;"))
+  )
+}
+
+
+# ── Helper: render a single "X _||_ Y | {Z}" conditional independence row ─────
+render_ci_row <- function(r) {
+  z_chips <- if (is.null(r$Z) || is.na(r$Z) || r$Z == "" || r$Z == "(nothing)") {
+    span("(no conditioning set)", class = "ci-cond-none")
+  } else {
+    tagList(
+      span("given", class = "ci-cond-label"),
+      lapply(trimws(strsplit(r$Z, ",")[[1]]), function(z) span(z, class = "ci-cond-chip"))
+    )
+  }
+  div(class = "ci-card",
+    span(r$X, class = "ci-var"),
+    span("⊥", class = "ci-symbol"),
+    span(r$Y, class = "ci-var"),
+    z_chips
+  )
+}
+
+# ── Helper: dagitty testable-implications render ──────────────────────────────
+render_dagitty_implications <- function(res) {
+  if (is.null(res)) {
+    return(div(p("Build a DAG in the 'Causal DAG' tab first, then click ",
+                 "'Derive Testable Implications'.", class = "empty-hint")))
+  }
+
+  model_toggle <- tags$details(
+    tags$summary("View dagitty model definition (paste into dagitty.net)", class = "dagitty-toggle"),
+    div(class = "dagitty-box", res$dagitty_string)
+  )
+
+  if (res$n_implications == 0) {
+    return(div(
+      model_toggle,
+      p("No testable implications: every pair of nodes is adjacent (the DAG is ",
+        "saturated), or there are too few nodes to imply any conditional independence.",
+        class = "empty-hint")
+    ))
+  }
+
+  rows <- lapply(seq_len(nrow(res$implied_CIs)), function(i) render_ci_row(res$implied_CIs[i, ]))
+
+  div(
+    model_toggle,
+    h4(sprintf("%d Testable Implications", res$n_implications),
+       style = "border-bottom:2px solid #16a085; padding-bottom:8px;"),
+    do.call(div, rows)
+  )
+}
+
+# ── Helper: theory color palette (stable per theory name) ─────────────────────
+theory_color <- function(name, all_names) {
+  palette <- c("#8e44ad","#2980b9","#16a085","#d35400","#c0392b","#27ae60","#f39c12","#2c3e50")
+  idx <- match(name, unique(all_names))
+  palette[((idx - 1) %% length(palette)) + 1]
+}
+
+# ── Helper: compare-theories render ────────────────────────────────────────────
+render_theory_comparison <- function(cmp) {
+  if (is.null(cmp)) {
+    return(div(p("Extract claims from 2+ papers, build a DAG, then click ",
+                 "'Compare Papers as Competing Theories'.", class = "empty-hint")))
+  }
+  if (is.null(cmp$discriminating) || nrow(cmp$discriminating) == 0) {
+    return(div(p("No discriminating implications found — every theory's predictions ",
+                 "overlap completely, or the comparison hasn't found any yet.",
+                 class = "empty-hint")))
+  }
+
+  disc <- cmp$discriminating
+  theories <- unique(disc$theory)
+
+  cards <- lapply(theories, function(th) {
+    sub <- disc[disc$theory == th, ]
+    color <- theory_color(th, disc$theory)
+    div(class = "theory-card", style = paste0("border-left-color:", color, ";"),
+      div(style = "margin-bottom:8px;",
+        span(th, class = "theory-badge", style = paste0("background:", color, ";")),
+        span(sprintf("%d implication(s) unique to this theory", nrow(sub)),
+             style = "color:#888; font-size:0.85em;")
+      ),
+      do.call(div, lapply(seq_len(nrow(sub)), function(i) render_ci_row(sub[i, ])))
+    )
+  })
+
+  div(
+    h4(sprintf("%d Discriminating Implications Across %d Theories", nrow(disc), length(theories)),
+       style = "border-bottom:2px solid #8e44ad; padding-bottom:8px;"),
+    p("Each implication below is predicted by exactly one theory — the best place to ",
+      "start testing against data, since a violation would count as evidence against ",
+      "that theory specifically.", style = "font-size:12px; color:#888;"),
+    do.call(div, cards)
   )
 }
 

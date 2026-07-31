@@ -126,12 +126,22 @@ generate_summary <- function(text, api_key, verbose) {
     if (httr::status_code(response) == 200) {
       result <- jsonlite::fromJSON(httr::content(response, as = "text", encoding = "UTF-8"), simplifyVector = FALSE)
       return(result$choices[[1]]$message$content)
+    } else {
+      err_body <- httr::content(response, as = "text", encoding = "UTF-8")
+      err_parsed <- tryCatch(jsonlite::fromJSON(err_body), error = function(e) NULL)
+      err_msg <- if (!is.null(err_parsed$error$message)) err_parsed$error$message else err_body
+      stop(sprintf("OpenAI API error (%d): %s", httr::status_code(response), err_msg))
     }
   }, error = function(e) {
     if (verbose) cat(sprintf("  Error generating summary: %s\n", conditionMessage(e)))
+    # generate_summary() is the FIRST of 5 API calls cauda.synthesize() makes.
+    # Re-throw here (instead of falling back to a placeholder string) so a
+    # real failure — e.g. the OpenAI account being out of credits — aborts
+    # the whole synthesis immediately instead of burning 4 more doomed API
+    # calls and returning a report made entirely of fallback placeholder
+    # text that looks broken but gives no indication why.
+    stop(e)
   })
-
-  return("Summary generation failed.")
 }
 
 
