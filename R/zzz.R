@@ -15,5 +15,7 @@
   cat("   • cauda.synthesize()    - Generate synthesis report\n")
   cat("   • cauda.claims_to_dag() - Build causal DAG from claims\n")
   cat("   • cauda.dag_theory()    - Plot pathway-colored DAG\n")
+  cat("   • cauda.dagitty()       - Derive testable implications (conditional independencies)\n")
+  cat("   • cauda.dagitty_compare() - Compare implications across competing-theory DAGs\n")
   cat("   • cauda.analyze()       - Data analysis (numeric datasets)\n\n")
 }

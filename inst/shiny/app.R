@@ -127,6 +127,25 @@ ui <- fluidPage(
           verbatimTextOutput("dag_summary")
         ),
 
+        # ── TESTABLE IMPLICATIONS (DAGitty) ────────────────────────────────
+        tabPanel("Testable Implications",
+          br(),
+          h5("From current DAG"),
+          actionButton("dagitty_btn", "Derive Testable Implications", class = "btn-sm btn-primary"),
+          downloadButton("download_dagitty_string", "Download dagitty model (.txt)", class = "btn-sm btn-success"),
+          br(), br(),
+          verbatimTextOutput("dagitty_implications"),
+          hr(),
+          h5("Compare papers as competing theories"),
+          p("Builds one candidate DAG per uploaded paper (paper = theory) and flags which ",
+            "testable implications are unique to a single paper's theory — the most useful ",
+            "place to start testing against data, since a shared implication can't tell the ",
+            "theories apart.", style = "font-size:12px; color:#888;"),
+          actionButton("compare_theories_btn", "Compare Papers as Competing Theories", class = "btn-sm btn-warning"),
+          br(), br(),
+          tableOutput("discriminating_table")
+        ),
+
         # ── DEBUG ───────────────────────────────────────────────────────────
         tabPanel("Debug",
           br(),
@@ -557,6 +576,82 @@ server <- function(input, output, session) {
       })
     })
   }
+
+  # ── DAGitty: testable implications ────────────────────────────────────────
+  dagitty_res <- reactiveVal(NULL)   # cauda.dagitty() result for the current DAG
+  theory_cmp  <- reactiveVal(NULL)   # cauda.dagitty_compare() result across papers
+
+  observeEvent(input$dagitty_btn, {
+    req(dag_obj())
+    tryCatch({
+      dagitty_res(cauda::cauda.dagitty(dag_obj(), verbose = FALSE))
+    }, error = function(e) {
+      dagitty_res(NULL)
+      showNotification(paste("DAGitty error:", e$message), type = "error")
+    })
+  })
+
+  output$dagitty_implications <- renderPrint({
+    res <- dagitty_res()
+    if (is.null(res)) {
+      cat("Build a DAG in the 'Causal DAG' tab first, then click 'Derive Testable Implications'.\n")
+      return(invisible())
+    }
+    cat("dagitty model (paste into https://dagitty.net for interactive editing):\n\n")
+    cat(res$dagitty_string, "\n\n")
+    cat("Implied conditional independencies (", res$n_implications, "):\n\n", sep = "")
+    if (res$n_implications == 0) {
+      cat("  (none — DAG is saturated, or too small to imply any conditional independence)\n")
+    } else {
+      for (i in seq_len(nrow(res$implied_CIs))) {
+        r <- res$implied_CIs[i, ]
+        cat(sprintf("  %s  _||_  %s   |   {%s}\n", r$X, r$Y, r$Z))
+      }
+    }
+  })
+
+  output$download_dagitty_string <- downloadHandler(
+    filename = function() paste0("dagitty_model_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".txt"),
+    content  = function(file) {
+      req(dagitty_res())
+      writeLines(dagitty_res()$dagitty_string, file)
+    }
+  )
+
+  observeEvent(input$compare_theories_btn, {
+    req(all_claims())
+    df <- all_claims()
+    if (!"paper_id" %in% names(df) || length(unique(stats::na.omit(df$paper_id))) < 2) {
+      showNotification("Need extracted claims from at least 2 papers to compare theories.", type = "warning")
+      return()
+    }
+    tryCatch({
+      pids <- unique(stats::na.omit(df$paper_id))
+      dags <- list()
+      for (pid in pids) {
+        sub <- df[!is.na(df$paper_id) & df$paper_id == pid, ]
+        d <- tryCatch(
+          cauda::cauda.claims_to_dag(sub, confidence_threshold = "low", include_speculative = TRUE, verbose = FALSE),
+          error = function(e) NULL
+        )
+        if (!is.null(d)) dags[[pid]] <- d
+      }
+      if (length(dags) < 2) {
+        showNotification("Fewer than 2 papers produced a usable DAG (each needs at least one directed claim).", type = "warning")
+        return()
+      }
+      theory_cmp(cauda::cauda.dagitty_compare(dags, verbose = FALSE))
+    }, error = function(e) {
+      showNotification(paste("Comparison error:", e$message), type = "error")
+    })
+  })
+
+  output$discriminating_table <- renderTable({
+    cmp <- theory_cmp()
+    if (is.null(cmp) || is.null(cmp$discriminating) || nrow(cmp$discriminating) == 0)
+      return(data.frame(Message = "No comparison yet, or no discriminating implications found."))
+    cmp$discriminating[, c("theory", "X", "Y", "Z")]
+  }, striped = TRUE, hover = TRUE, width = "100%")
 
   # ── Download synthesis ────────────────────────────────────────────────────
   output$download_synthesis <- downloadHandler(

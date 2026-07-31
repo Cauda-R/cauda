@@ -5,6 +5,7 @@ Depends: R (>= 4.0)
 Imports:
     shiny,
     cauda,
-    pdftools
+    pdftools,
+    dagitty
 Remotes:
     Cauda-R/cauda
