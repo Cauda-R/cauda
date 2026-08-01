@@ -33,7 +33,10 @@
 #'   * `dagitty_string`: the model definition as dagitty syntax text — paste
 #'     this directly into <http://dagitty.net> for interactive visual editing
 #'   * `implied_CIs`: data frame with columns `X`, `Y`, `Z` (conditioning
-#'     set, comma-separated, or `"(nothing)"`), one row per implication
+#'     set, comma-separated, or `"(nothing)"`), one row per implication.
+#'     Sorted with the simplest implications first (fewest conditioning
+#'     variables = cheapest/most direct to test against real data), ties
+#'     broken alphabetically by X then Y.
 #'   * `n_implications`: number of testable implications returned
 #'
 #' @examples
@@ -104,9 +107,21 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
       X = to_display(ci$X),
       Y = to_display(ci$Y),
       Z = if (length(ci$Z) > 0) paste(to_display(ci$Z), collapse = ", ") else "(nothing)",
+      n_z = length(ci$Z),
       stringsAsFactors = FALSE
     )
   }))
+  rownames(ci_df) <- NULL
+
+  # Sort "best"/most-useful-to-test-first: implications with FEWER
+  # conditioning variables are simpler and cheaper to test directly against
+  # real data (fewer covariates to control for, more statistical power), so
+  # those surface first. Ties broken alphabetically by X then Y so the order
+  # is stable/reproducible rather than depending on dagitty's internal
+  # traversal order. n_z is dropped from the returned data frame afterward —
+  # it's a display-ordering aid, not part of the public column contract.
+  ci_df <- ci_df[order(ci_df$n_z, ci_df$X, ci_df$Y), ]
+  ci_df$n_z <- NULL
   rownames(ci_df) <- NULL
 
   if (verbose) {

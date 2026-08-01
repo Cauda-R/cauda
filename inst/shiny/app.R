@@ -159,7 +159,8 @@ ui <- fluidPage(
           br(),
           p("Derives the conditional independencies your current DAG implies — the ",
             "predictions that MUST hold in real data if this causal theory is correct. ",
-            "These are the concrete things to go test.", style = "font-size:12px; color:#888;"),
+            "These are the concrete things to go test. Sorted simplest-to-test first ",
+            "(fewest variables to control for).", style = "font-size:12px; color:#888;"),
           actionButton("dagitty_btn", "Derive Testable Implications", class = "btn-sm btn-primary"),
           downloadButton("download_dagitty_string", "Download dagitty model (.txt)", class = "btn-sm btn-success"),
           br(), br(),
@@ -555,7 +556,7 @@ server <- function(input, output, session) {
         output$dag_plot <- renderPlot({
           plot(1, type="n", axes=FALSE, main="No edges in DAG")
           text(1, 1, "Add edges to display DAG", cex=1.5, col="gray")
-        })
+        }, height = 680)
         output$dag_summary <- renderPrint(cat("No edges.\n"))
         return()
       }
@@ -607,6 +608,10 @@ server <- function(input, output, session) {
 
       dag_obj(new_dag)
 
+      # Height scales with node count instead of shrinking nodes/text to fit
+      # a fixed canvas — a dense claims DAG (20-30+ nodes) needs real vertical
+      # room, not tinier and tinier circles. Reference points: 8 nodes ~ 736px,
+      # 24 nodes ~ 1248px, capped at 1500px so it never runs away.
       output$dag_plot <- renderPlot({
         tryCatch(
           cauda::cauda.dag_theory(new_dag, verbose=FALSE),
@@ -614,6 +619,9 @@ server <- function(input, output, session) {
             plot(new_dag, main="Causal DAG")
           }
         )
+      }, height = function() {
+        n <- length(bnlearn::nodes(new_dag))
+        max(600, min(1500, 480 + n * 32))
       })
 
       output$dag_summary <- renderPrint({
@@ -627,7 +635,7 @@ server <- function(input, output, session) {
       output$dag_plot <- renderPlot({
         plot(1, type="n", axes=FALSE)
         text(1, 1, paste("DAG error:", e$message), cex=1, col="red")
-      })
+      }, height = 680)
     })
   }
 
@@ -657,6 +665,16 @@ server <- function(input, output, session) {
     }
   )
 
+  # NOTE: cauda.claims_to_dag() stop()s per-paper if that paper's claims
+  # produced zero directed causal claims (claim_type not in causal_effect/
+  # mechanism/mediation/interaction/moderation — e.g. a purely descriptive or
+  # predictive-model paper). That tryCatch used to swallow the error and
+  # silently drop the paper from `dags`, so the Compare Theories tab would
+  # just render fewer cards than papers uploaded with no explanation — the
+  # same silent-failure pattern already fixed once for Critique/Synthesis.
+  # Now the reason for every skipped paper is captured and surfaced as a
+  # persistent banner in the tab (not just a toast that disappears). (Fixed
+  # 2026-08-01.)
   observeEvent(input$compare_theories_btn, {
     req(all_claims())
     df <- all_claims()
@@ -667,26 +685,32 @@ server <- function(input, output, session) {
     tryCatch({
       pids <- unique(stats::na.omit(df$paper_id))
       dags <- list()
+      skipped <- character(0)
       for (pid in pids) {
         sub <- df[!is.na(df$paper_id) & df$paper_id == pid, ]
         d <- tryCatch(
           cauda::cauda.claims_to_dag(sub, confidence_threshold = "low", include_speculative = TRUE, verbose = FALSE),
-          error = function(e) NULL
+          error = function(e) {
+            skipped[[length(skipped) + 1]] <<- sprintf("%s (%s)", pid, conditionMessage(e))
+            NULL
+          }
         )
         if (!is.null(d)) dags[[pid]] <- d
       }
       if (length(dags) < 2) {
+        theory_cmp(list(result = NULL, skipped = skipped))
         showNotification("Fewer than 2 papers produced a usable DAG (each needs at least one directed claim).", type = "warning")
         return()
       }
-      theory_cmp(cauda::cauda.dagitty_compare(dags, verbose = FALSE))
+      theory_cmp(list(result = cauda::cauda.dagitty_compare(dags, verbose = FALSE), skipped = skipped))
     }, error = function(e) {
       showNotification(paste("Comparison error:", e$message), type = "error")
     })
   })
 
   output$discriminating_table <- renderUI({
-    render_theory_comparison(theory_cmp())
+    tc <- theory_cmp()
+    render_theory_comparison(tc$result, tc$skipped)
   })
 
   # ── Download synthesis ────────────────────────────────────────────────────
@@ -726,7 +750,7 @@ server <- function(input, output, session) {
   output$dag_plot <- renderPlot({
     plot(1,type="n",axes=FALSE,main="DAG will appear here")
     text(1,1,"Build DAG from Claims",cex=1.5,col="gray")
-  })
+  }, height = 680)
   output$dag_summary <- renderPrint(cat("DAG not yet generated.\n"))
 }
 
@@ -857,15 +881,31 @@ theory_color <- function(name, all_names) {
 }
 
 # ── Helper: compare-theories render ────────────────────────────────────────────
-render_theory_comparison <- function(cmp) {
+# `skipped` is a character vector of "paper_id (reason)" strings for any
+# paper that couldn't produce a usable DAG (e.g. no directed causal claims) —
+# see the compare_theories_btn observer. Rendered as a persistent banner so
+# it's not just a toast the user has to catch before it fades. This is why
+# e.g. a purely descriptive/predictive-model paper can silently be absent
+# from the comparison otherwise: it never produced a DAG to compare with.
+render_theory_comparison <- function(cmp, skipped = NULL) {
+  skip_note <- if (!is.null(skipped) && length(skipped) > 0) {
+    div(style = "margin-bottom:12px; padding:8px 12px; background:#fff3cd;
+                 border-left:4px solid #f0ad4e; border-radius:4px; font-size:0.85em; color:#7a5c00;",
+      strong(sprintf("%d paper(s) excluded from comparison: ", length(skipped))),
+      paste(skipped, collapse = "; ")
+    )
+  } else NULL
+
   if (is.null(cmp)) {
-    return(div(p("Extract claims from 2+ papers, build a DAG, then click ",
-                 "'Compare Papers as Competing Theories'.", class = "empty-hint")))
+    return(div(skip_note,
+      p("Extract claims from 2+ papers, build a DAG, then click ",
+        "'Compare Papers as Competing Theories'.", class = "empty-hint")))
   }
   if (is.null(cmp$discriminating) || nrow(cmp$discriminating) == 0) {
-    return(div(p("No discriminating implications found — every theory's predictions ",
-                 "overlap completely, or the comparison hasn't found any yet.",
-                 class = "empty-hint")))
+    return(div(skip_note,
+      p("No discriminating implications found — every theory's predictions ",
+        "overlap completely, or the comparison hasn't found any yet.",
+        class = "empty-hint")))
   }
 
   disc <- cmp$discriminating
@@ -885,6 +925,7 @@ render_theory_comparison <- function(cmp) {
   })
 
   div(
+    skip_note,
     h4(sprintf("%d Discriminating Implications Across %d Theories", nrow(disc), length(theories)),
        style = "border-bottom:2px solid #8e44ad; padding-bottom:8px;"),
     p("Each implication below is predicted by exactly one theory — the best place to ",

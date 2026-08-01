@@ -1748,16 +1748,20 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
     return(x)
   }
   # Truncate very long display names before wrapping (keeps circles readable).
-  # Sizing below now takes cauda.dag() (the original data-driven DAG plot,
-  # see above in this file) as the reference point instead of inventing new
-  # numbers: that function uses vertex.size=20, vertex.label.cex=0.44,
-  # vertex.frame.width=1.5, edge.arrow.size=0.4 and reads cleanly. This
-  # function scales around those same values (small range either side for
-  # node count) rather than the much larger cex=1.45/vertex.size=48 this
-  # function used before, which is what made claim-derived labels (longer,
-  # wordier than typical data column names) overflow the circles.
+  # Sizing below takes cauda.dag() (the original data-driven DAG plot, see
+  # above in this file) as the reference point: that function uses a FIXED
+  # vertex.size=20 / vertex.label.cex=0.44 regardless of node count and reads
+  # cleanly, because it's typically drawing far fewer nodes than a claims DAG
+  # can produce. An earlier version of this function scaled size/cex all the
+  # way down toward zero as n_nodes grew (down to vertex.size=16/cex=0.38 at
+  # ~24 nodes) to avoid overlap, but that made the plot illegible instead —
+  # tiny nodes with near-unreadable single-word fragments. The real fix for a
+  # bigger graph is a BIGGER CANVAS, not smaller glyphs: size/cex now stay in
+  # a tight band close to cauda.dag()'s reference values at every node count,
+  # and the Shiny app grows plotOutput's height with node count instead (see
+  # app.R's `height = function() ...` on the dag_plot renderPlot).
   n_nodes <- length(node_names)
-  trunc_len <- if (n_nodes <= 8) 18 else if (n_nodes <= 14) 14 else 10
+  trunc_len   <- if (n_nodes <= 8) 24 else if (n_nodes <= 14) 20 else if (n_nodes <= 20) 16 else 13
   display_node_names <- ifelse(
     nchar(display_node_names) > trunc_len,
     paste0(substr(display_node_names, 1, trunc_len - 2), "…"),
@@ -1776,15 +1780,20 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   }
   wrapped_labels <- sapply(display_node_names, wrap_label_capped)
 
-  # Scale font size and node size around cauda.dag()'s reference constants
-  # (0.44 / 20) instead of the old much-larger ceiling.
-  label_cex   <- max(0.38, min(0.58, 6.5 / n_nodes))
-  vertex_size <- max(16, min(26, 260 / n_nodes))
+  # Size/cex stay close to cauda.dag()'s fixed reference (20 / 0.44) at every
+  # node count — a small step down for bigger graphs, never collapsing to
+  # unreadable. The actual room to breathe comes from the bigger canvas
+  # (app.R sizes the plot height to n_nodes) and the wider layout spread
+  # below, not from shrinking the glyphs themselves.
+  label_cex   <- if (n_nodes <= 8) 0.50 else if (n_nodes <= 14) 0.46 else if (n_nodes <= 20) 0.42 else 0.40
+  vertex_size <- if (n_nodes <= 8) 22   else if (n_nodes <= 14) 20   else if (n_nodes <= 20) 19   else 18
 
   # Layout with graphopt — higher charge/repulsion pushes nodes further
   # apart as the graph grows, which is what actually stops neighboring
   # labels from overlapping (font size alone can't fix crowded layouts).
-  charge <- min(0.35, 0.08 + 0.01 * n_nodes)
+  # Cap raised from 0.35 to 0.5 so larger graphs get proportionally more
+  # spread now that node/label size no longer shrinks as aggressively.
+  charge <- min(0.5, 0.08 + 0.014 * n_nodes)
   set.seed(42)
   layout_coords <- igraph::layout_with_graphopt(
     g, niter = 3000,
