@@ -1748,35 +1748,38 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
     return(x)
   }
   # Truncate very long display names before wrapping (keeps circles readable).
-  # Truncation length and everything below (font size, node size, spacing)
-  # now scales with node count — a 5-node DAG can afford large bold text and
-  # roomy circles, but a 20-node DAG needs much smaller text and tighter
-  # circles or every label bleeds into its neighbors. Fixed sizes (previously
-  # cex=1.45, vertex.size=48 always) is what caused the "text overlapping /
-  # too big for the circle" look once graphs grew past ~8-10 nodes.
+  # Sizing below now takes cauda.dag() (the original data-driven DAG plot,
+  # see above in this file) as the reference point instead of inventing new
+  # numbers: that function uses vertex.size=20, vertex.label.cex=0.44,
+  # vertex.frame.width=1.5, edge.arrow.size=0.4 and reads cleanly. This
+  # function scales around those same values (small range either side for
+  # node count) rather than the much larger cex=1.45/vertex.size=48 this
+  # function used before, which is what made claim-derived labels (longer,
+  # wordier than typical data column names) overflow the circles.
   n_nodes <- length(node_names)
-  trunc_len <- if (n_nodes <= 8) 30 else if (n_nodes <= 14) 22 else 16
+  trunc_len <- if (n_nodes <= 8) 18 else if (n_nodes <= 14) 14 else 10
   display_node_names <- ifelse(
     nchar(display_node_names) > trunc_len,
     paste0(substr(display_node_names, 1, trunc_len - 2), "…"),
     display_node_names
   )
 
-  # Cap wrapped labels at 3 lines max (join any extra words onto the last
-  # line) so text height never grows past what a small/medium circle holds.
+  # Cap wrapped labels at 2 lines max (join any extra words onto the last
+  # line) so text height never grows past what a small circle holds.
   wrap_label_capped <- function(x) {
     wrapped <- wrap_label(x)
     lines <- strsplit(wrapped, "\n")[[1]]
-    if (length(lines) > 3) {
-      lines <- c(lines[1:2], paste(lines[3:length(lines)], collapse = " "))
+    if (length(lines) > 2) {
+      lines <- c(lines[1], paste(lines[2:length(lines)], collapse = " "))
     }
     paste(lines, collapse = "\n")
   }
   wrapped_labels <- sapply(display_node_names, wrap_label_capped)
 
-  # Scale font size and node size inversely with node count.
-  label_cex   <- max(0.5, min(1.15, 11 / n_nodes))
-  vertex_size <- max(24, min(46, 420 / n_nodes))
+  # Scale font size and node size around cauda.dag()'s reference constants
+  # (0.44 / 20) instead of the old much-larger ceiling.
+  label_cex   <- max(0.38, min(0.58, 6.5 / n_nodes))
+  vertex_size <- max(16, min(26, 260 / n_nodes))
 
   # Layout with graphopt — higher charge/repulsion pushes nodes further
   # apart as the graph grows, which is what actually stops neighboring
@@ -1797,8 +1800,9 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
 
   par(mar = c(1, 1, 3, 1), bg = "white")
 
-  # Plot with pathway colors and edge styles
-  # Enhanced styling: opaque circles, wrapped text sized to fit, thick colored edges
+  # Plot with pathway colors and edge styles — same restrained styling as
+  # cauda.dag() (thin frame, small arrowheads, modest edge width), just with
+  # pathway color/linetype coding layered on top.
   plot(
     g,
     layout             = layout_coords,
@@ -1811,11 +1815,11 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
     vertex.label.dist  = 0,
     vertex.label.degree = -pi/2,
     vertex.frame.color = "black",
-    vertex.frame.width = 2.4,
-    edge.arrow.size    = 0.6,
+    vertex.frame.width = 1.5,
+    edge.arrow.size    = 0.4,
     edge.color         = adjustcolor(edge_colors, alpha.f = 0.8),
     edge.lty           = edge_styles,
-    edge.width         = edge_widths * 3,
+    edge.width         = edge_widths * 1.2,
     edge.curved        = 0.25,
     rescale            = FALSE,
     asp                = 0,

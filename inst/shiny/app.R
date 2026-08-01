@@ -25,27 +25,31 @@ ui <- fluidPage(
     .edge-row    { padding:6px 10px; border-bottom:1px solid #eee; }
     .edge-row:hover { background:#f0f0f0; }
 
-    .ci-card     { display:flex; align-items:center; flex-wrap:wrap; gap:8px;
-                   margin-bottom:10px; padding:12px 16px; background:#f8f9fa;
-                   border-left:4px solid #16a085; border-radius:4px; }
-    .ci-var      { display:inline-block; padding:3px 10px; border-radius:4px;
-                   background:#eaf2f8; border:1px solid #aed6f1; color:#1a5276;
+    .ci-list     { border:1px solid #e6e6e6; border-radius:6px; overflow:hidden; margin-bottom:10px; }
+    .ci-row      { display:flex; align-items:center; flex-wrap:wrap; gap:6px;
+                   padding:6px 12px; border-bottom:1px solid #eee; font-size:0.88em; }
+    .ci-row:last-child { border-bottom:none; }
+    .ci-row:nth-child(even) { background:#fafbfb; }
+    .ci-var      { display:inline-block; padding:1px 7px; border-radius:3px;
+                   background:#eaf2f8; border:1px solid #d6e8f5; color:#1a5276;
                    font-family:'SFMono-Regular',Consolas,monospace; font-weight:600;
-                   font-size:0.92em; }
-    .ci-symbol   { color:#888; font-weight:700; font-size:1.05em; }
-    .ci-cond-label { color:#888; font-size:0.85em; margin-left:4px; }
-    .ci-cond-chip { display:inline-block; padding:2px 8px; margin:0 2px; border-radius:10px;
-                   background:#fdf2e9; border:1px solid #f5cba7; color:#935116;
-                   font-size:0.82em; }
-    .ci-cond-none { color:#aaa; font-size:0.85em; font-style:italic; }
+                   font-size:0.9em; }
+    .ci-symbol   { color:#aaa; font-weight:700; }
+    .ci-cond-label { color:#999; font-size:0.85em; margin-left:2px; }
+    .ci-cond-chip { display:inline-block; padding:1px 6px; margin:0 1px; border-radius:8px;
+                   background:#fdf2e9; border:1px solid #f5e0c6; color:#935116;
+                   font-size:0.8em; }
+    .ci-cond-none { color:#bbb; font-size:0.82em; font-style:italic; }
+    .show-more-toggle { cursor:pointer; color:#3498db; font-size:0.85em; padding:8px 12px;
+                   border-top:1px solid #eee; background:#fafbfb; }
     .dagitty-toggle { cursor:pointer; color:#3498db; font-size:0.85em; margin:6px 0 14px; }
     .dagitty-box { background:#2c3e50; color:#ecf0f1; padding:12px 16px; border-radius:4px;
                    font-family:'SFMono-Regular',Consolas,monospace; font-size:0.82em;
                    white-space:pre-wrap; margin-bottom:14px; }
-    .theory-card { margin-bottom:14px; padding:14px 16px; background:#f8f9fa;
+    .theory-card { margin-bottom:14px; padding:10px 14px; background:#f8f9fa;
                    border-left:4px solid #8e44ad; border-radius:4px; }
-    .theory-badge{ display:inline-block; padding:3px 10px; border-radius:10px;
-                   color:white; font-size:0.82em; font-weight:600; margin-right:8px; }
+    .theory-badge{ display:inline-block; padding:2px 9px; border-radius:10px;
+                   color:white; font-size:0.8em; font-weight:600; margin-right:8px; }
     .empty-hint  { color:#888; font-style:italic; padding:10px 0; }
   ")),
 
@@ -787,11 +791,32 @@ render_ci_row <- function(r) {
       lapply(trimws(strsplit(r$Z, ",")[[1]]), function(z) span(z, class = "ci-cond-chip"))
     )
   }
-  div(class = "ci-card",
+  div(class = "ci-row",
     span(r$X, class = "ci-var"),
     span("⊥", class = "ci-symbol"),
     span(r$Y, class = "ci-var"),
     z_chips
+  )
+}
+
+# ── Helper: render a data frame of CI rows as a compact bordered list,
+# capped at `cap` visible rows with the rest tucked behind a native
+# <details> "Show N more" toggle. A full DAG's basis set can easily run to
+# 20-40+ implications, and rendering each as its own big padded card was
+# overwhelming ("overkill") — this keeps the common case short while still
+# making every implication reachable.
+render_ci_list <- function(df, cap = 8) {
+  n <- nrow(df)
+  rows <- lapply(seq_len(n), function(i) render_ci_row(df[i, ]))
+  if (n <= cap) {
+    return(div(class = "ci-list", do.call(tagList, rows)))
+  }
+  div(class = "ci-list",
+    do.call(tagList, rows[1:cap]),
+    tags$details(
+      tags$summary(sprintf("Show %d more", n - cap), class = "show-more-toggle"),
+      do.call(tagList, rows[(cap + 1):n])
+    )
   )
 }
 
@@ -816,13 +841,11 @@ render_dagitty_implications <- function(res) {
     ))
   }
 
-  rows <- lapply(seq_len(nrow(res$implied_CIs)), function(i) render_ci_row(res$implied_CIs[i, ]))
-
   div(
     model_toggle,
     h4(sprintf("%d Testable Implications", res$n_implications),
        style = "border-bottom:2px solid #16a085; padding-bottom:8px;"),
-    do.call(div, rows)
+    render_ci_list(res$implied_CIs, cap = 8)
   )
 }
 
@@ -857,7 +880,7 @@ render_theory_comparison <- function(cmp) {
         span(sprintf("%d implication(s) unique to this theory", nrow(sub)),
              style = "color:#888; font-size:0.85em;")
       ),
-      do.call(div, lapply(seq_len(nrow(sub)), function(i) render_ci_row(sub[i, ])))
+      render_ci_list(sub, cap = 6)
     )
   })
 
