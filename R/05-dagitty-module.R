@@ -113,6 +113,24 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
   }))
   rownames(ci_df) <- NULL
 
+  # De-duplicate order-independent pairs: dagitty::impliedConditionalIndependencies()
+  # can return BOTH "X _||_ Y | Z" and "Y _||_ X | Z" as separate entries for
+  # certain DAG shapes (confirmed: a single common-cause/"star" DAG, e.g. one
+  # source claim feeding many targets, produces every pair twice — 30 rows
+  # for 6 leaf nodes instead of the 15 true pairs). The two orderings are the
+  # same statement, so keep only one. This matters beyond just inflated counts
+  # in the Testable Implications tab: cauda.dagitty_compare() below keys each
+  # implication as pmin(X,Y)/pmax(X,Y)/Z specifically so "X⊥Y" and "Y⊥X"
+  # collapse to one key — but if THIS function hands it two rows with the
+  # same key from a single theory, that key's count is >=2 before any
+  # cross-theory comparison even happens, so cauda.dagitty_compare() marked
+  # every one of that theory's implications as "not discriminating" (shared)
+  # even when no other theory came anywhere near it. That's what made a
+  # perfectly good single-source theory disappear entirely from the Compare
+  # Theories tab. Fixed 2026-08-01.
+  dedup_key <- paste(pmin(ci_df$X, ci_df$Y), pmax(ci_df$X, ci_df$Y), ci_df$Z, sep = " || ")
+  ci_df <- ci_df[!duplicated(dedup_key), ]
+
   # Sort "best"/most-useful-to-test-first: implications with FEWER
   # conditioning variables are simpler and cheaper to test directly against
   # real data (fewer covariates to control for, more statistical power), so
