@@ -51,7 +51,7 @@ cauda.critique <- function(claims, verbose = TRUE) {
   claims$translation_gap <- NA_character_
 
   n <- nrow(claims)
-  if (verbose) cat(sprintf("Critiquing all %d claims in a single gpt-4-turbo call...\n", n))
+  if (verbose) cat(sprintf("Critiquing all %d claims in a single gpt-4o call...\n", n))
 
   # Build batch prompt — all claims in one call instead of N sequential calls
   claims_text <- paste(sapply(seq_len(n), function(i) {
@@ -100,7 +100,7 @@ cauda.critique <- function(claims, verbose = TRUE) {
 
   tryCatch({
     request_body <- list(
-      model = "gpt-4-turbo",
+      model = "gpt-4o",  # switched from gpt-4-turbo 2026-08-01 for cost (~4x cheaper, comparable quality)
       messages = list(list(role = "user", content = batch_prompt)),
       temperature = 0.2,
       max_tokens = min(3500, 600 * n)

@@ -107,7 +107,8 @@ generate_summary <- function(text, api_key, verbose) {
 
   tryCatch({
     request_body <- list(
-      model = "gpt-3.5-turbo",
+      model = "gpt-4o-mini",  # switched from gpt-3.5-turbo 2026-08-01: cheaper ($0.15/$0.60
+                               # vs legacy 3.5-turbo pricing) AND higher quality
       messages = list(list(role = "user", content = prompt)),
       temperature = 0.3,
       max_tokens = 200

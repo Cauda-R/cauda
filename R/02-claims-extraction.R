@@ -8,7 +8,10 @@
 #' - Cauda approach: source/target DAG structure, effect sizes, pathway tagging
 #'
 #' @param text Character string containing the paper text
-#' @param model GPT model. Default: "gpt-4-turbo"
+#' @param model GPT model. Default: "gpt-4o" (switched from gpt-4-turbo on
+#'   2026-08-01 for cost: gpt-4-turbo is $10/$30 per million input/output
+#'   tokens and deprecated by OpenAI; gpt-4o is $2.50/$10 — about 4x cheaper
+#'   with comparable quality for this structured extraction task)
 #' @param temperature Numeric 0-1. Default: 0.3
 #' @param max_tokens Integer. Default: 4000
 #' @param paper_id Optional string to tag claims with source paper. Default: NULL
@@ -27,7 +30,7 @@
 #' @importFrom jsonlite toJSON fromJSON
 cauda.extract <- function(
   text,
-  model        = "gpt-4-turbo",
+  model        = "gpt-4o",
   temperature  = 0.3,
   max_tokens   = 4000,
   paper_id     = NULL,

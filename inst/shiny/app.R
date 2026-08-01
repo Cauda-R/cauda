@@ -80,7 +80,7 @@ ui <- fluidPage(
                    class = "btn-success btn-block"),
 
       hr(),
-      p(em("Powered by GPT-4-turbo + Cauda"),
+      p(em("Powered by GPT-4o + Cauda"),
         style = "color:#888; font-size:11px;")
     ),
 
@@ -245,10 +245,10 @@ server <- function(input, output, session) {
 
       combined <- withProgress(
         message = sprintf("Extracting from %d paper(s)…", length(texts)),
-        detail  = "Calling GPT-4-turbo…",
+        detail  = "Calling GPT-4o…",
         value   = 0.3, {
           cauda::cauda.extract_multi(texts, is_pdf = FALSE,
-                                     model = "gpt-4-turbo",
+                                     model = "gpt-4o",
                                      temperature = 0.3, max_tokens = 4000)
         }
       )
