@@ -51,6 +51,24 @@ ui <- fluidPage(
     .theory-badge{ display:inline-block; padding:2px 9px; border-radius:10px;
                    color:white; font-size:0.8em; font-weight:600; margin-right:8px; }
     .empty-hint  { color:#888; font-style:italic; padding:10px 0; }
+    .test-row    { display:flex; align-items:center; flex-wrap:wrap; gap:8px;
+                   padding:7px 12px; border-bottom:1px solid #eee; font-size:0.87em;
+                   border-left:4px solid #ccc; }
+    .test-row:last-child { border-bottom:none; }
+    .test-row-violated  { border-left-color:#c0392b; background:#fdf2f1; }
+    .test-row-consistent{ border-left-color:#27ae60; background:#f2faf5; }
+    .test-stat   { color:#888; font-size:0.85em; margin-left:auto; white-space:nowrap; }
+    .test-verdict{ display:inline-block; padding:1px 8px; border-radius:10px; color:white;
+                   font-size:0.78em; font-weight:600; }
+    .verdict-violated  { background:#c0392b; }
+    .verdict-consistent{ background:#27ae60; }
+    .untestable-row { padding:5px 12px; border-bottom:1px solid #eee; font-size:0.85em; color:#888; }
+    .untestable-row:last-child { border-bottom:none; }
+    .summary-table { width:100%; border-collapse:collapse; margin-bottom:16px; font-size:0.9em; }
+    .summary-table th, .summary-table td { padding:7px 10px; border-bottom:1px solid #eee; text-align:left; }
+    .summary-table th { color:#888; font-weight:600; font-size:0.82em; text-transform:uppercase; }
+    .varmap-row  { display:flex; align-items:center; gap:10px; padding:4px 0; }
+    .varmap-label{ flex:1; font-size:0.87em; }
   ")),
 
   sidebarLayout(
@@ -183,6 +201,32 @@ ui <- fluidPage(
           actionButton("compare_theories_btn", "Compare Papers as Competing Theories", class = "btn-sm btn-warning"),
           br(), br(),
           uiOutput("discriminating_table")
+        ),
+
+        # ── TEST AGAINST REAL DATA (Cox workflow step 5) ─────────────────────
+        tabPanel("Test Against Real Data",
+          br(),
+          p("Checks each theory's testable implications against real public data. ",
+            "A DAG's node labels are abstract claim text ('Purdue marketing', ",
+            "'psychosocial despair') that don't literally match a data column, so ",
+            "map each node to the real variable that measures it below. Implications ",
+            "where every variable involved has a mapped column get tested; the rest ",
+            "are reported as untestable, with the reason, rather than silently skipped.",
+            style = "font-size:12px; color:#888;"),
+          p(strong("Run 'Compare Papers as Competing Theories' first"),
+            " — this tab tests the same per-paper DAGs built there.",
+            style = "font-size:12px; color:#c0392b;"),
+          actionButton("load_real_data_btn", "Load Real Opioid Dataset (CDC + DEA ARCOS)",
+                       class = "btn-sm btn-info"),
+          br(), br(),
+          uiOutput("real_data_status_ui"),
+          br(),
+          uiOutput("var_map_ui"),
+          br(),
+          actionButton("run_empirical_test_btn", "Test Implications Against Real Data",
+                       class = "btn-sm btn-danger"),
+          br(), br(),
+          uiOutput("empirical_test_results_ui")
         ),
 
         # ── DEBUG ───────────────────────────────────────────────────────────
@@ -716,6 +760,10 @@ server <- function(input, output, session) {
   # ── DAGitty: testable implications ────────────────────────────────────────
   dagitty_res <- reactiveVal(NULL)   # cauda.dagitty() result for the current DAG
   theory_cmp  <- reactiveVal(NULL)   # cauda.dagitty_compare() result across papers
+  theory_dags <- reactiveVal(NULL)   # named list of per-paper DAGs, built by compare_theories_btn
+  real_data       <- reactiveVal(NULL)   # data frame loaded from inst/extdata
+  node_label_map  <- reactiveVal(NULL)   # varmap input id -> DAG display label, for the current node set
+  empirical_result<- reactiveVal(NULL)   # cauda.test_implications_compare() result
 
   observeEvent(input$dagitty_btn, {
     req(dag_obj())
@@ -773,9 +821,11 @@ server <- function(input, output, session) {
       }
       if (length(dags) < 2) {
         theory_cmp(list(result = NULL, skipped = skipped))
+        theory_dags(NULL)
         showNotification("Fewer than 2 papers produced a usable DAG (each needs at least one directed claim).", type = "warning")
         return()
       }
+      theory_dags(dags)
       theory_cmp(list(result = cauda::cauda.dagitty_compare(dags, verbose = FALSE), skipped = skipped))
     }, error = function(e) {
       showNotification(paste("Comparison error:", e$message), type = "error")
@@ -785,6 +835,113 @@ server <- function(input, output, session) {
   output$discriminating_table <- renderUI({
     tc <- theory_cmp()
     render_theory_comparison(tc$result, tc$skipped)
+  })
+
+  # ── TEST AGAINST REAL DATA (Cox workflow step 5) ───────────────────────────
+  # NOTE: purpose-built for the opioid dataset first (per plan confirmed with
+  # user) — inst/extdata/opioid_real_data.csv, built by
+  # data-raw/build_opioid_test_data.R from CDC VSRR + DEA ARCOS. Loading it
+  # via system.file() (not a relative path) so this works both in local
+  # devtools::load_all() sessions and once the package is installed on
+  # shinyapps.io, same pattern the rest of the app already relies on.
+  observeEvent(input$load_real_data_btn, {
+    path <- system.file("extdata", "opioid_real_data.csv", package = "cauda")
+    if (path == "" || !file.exists(path)) {
+      showNotification("Bundled opioid_real_data.csv not found in the installed package.", type = "error")
+      return()
+    }
+    tryCatch({
+      df <- read.csv(path, stringsAsFactors = FALSE)
+      real_data(df)
+    }, error = function(e) {
+      showNotification(paste("Failed to load real data:", e$message), type = "error")
+    })
+  })
+
+  output$real_data_status_ui <- renderUI({
+    df <- real_data()
+    if (is.null(df)) {
+      return(p("No real data loaded yet.", class = "empty-hint"))
+    }
+    id_cols  <- intersect(c("state", "state_name", "year"), names(df))
+    val_cols <- setdiff(names(df), id_cols)
+    div(
+      p(sprintf("✓ Loaded %d rows (%s) x %d columns.", nrow(df),
+                if ("year" %in% names(df)) paste0(min(df$year, na.rm=TRUE), "-", max(df$year, na.rm=TRUE)) else "?",
+                ncol(df)),
+        style = "color:#27ae60; font-weight:bold; font-size:0.9em;"),
+      p(strong("Real variables available to map: "), paste(val_cols, collapse = ", "),
+        style = "font-size:0.85em; color:#555;")
+    )
+  })
+
+  # Build the node -> data-column mapping UI once both a real dataset and a
+  # set of per-paper theory DAGs exist. Node labels come straight out of
+  # each DAG's display_lookup (cauda.claims_to_dag()'s human-readable claim
+  # text), deduplicated across all theories so a construct shared by two
+  # theories (e.g. "Overdose death") only needs mapping once.
+  output$var_map_ui <- renderUI({
+    df   <- real_data()
+    dags <- theory_dags()
+    if (is.null(df) || is.null(dags)) {
+      return(p("Load the real dataset and run 'Compare Papers as Competing Theories' first.",
+                class = "empty-hint"))
+    }
+    id_cols  <- intersect(c("state", "state_name", "year"), names(df))
+    val_cols <- setdiff(names(df), id_cols)
+
+    all_labels <- unique(unlist(lapply(dags, function(d) unname(attr(d, "display_lookup")))))
+    all_labels <- sort(all_labels)
+
+    ids <- paste0("varmap_", seq_along(all_labels))
+    node_label_map(setNames(all_labels, ids))
+
+    rows <- lapply(seq_along(all_labels), function(i) {
+      div(class = "varmap-row",
+        span(all_labels[i], class = "varmap-label"),
+        div(style = "width:280px;",
+          selectInput(ids[i], NULL, choices = c("(no real data)" = "", val_cols), width = "100%")
+        )
+      )
+    })
+
+    div(
+      h6(sprintf("Map %d DAG node(s) to real data columns", length(all_labels))),
+      do.call(tagList, rows)
+    )
+  })
+
+  observeEvent(input$run_empirical_test_btn, {
+    df   <- real_data()
+    dags <- theory_dags()
+    labs <- node_label_map()
+    if (is.null(df) || is.null(dags) || is.null(labs)) {
+      showNotification("Load the real dataset and compare theories first.", type = "warning")
+      return()
+    }
+    ids <- names(labs)
+    selected <- sapply(ids, function(id) {
+      v <- input[[id]]
+      if (is.null(v)) "" else v
+    })
+    var_map <- selected[selected != ""]
+    names(var_map) <- unname(labs[names(var_map)])
+
+    if (length(var_map) == 0) {
+      showNotification("Map at least one DAG node to a real data column first.", type = "warning")
+      return()
+    }
+
+    tryCatch({
+      empirical_result(cauda::cauda.test_implications_compare(dags, df, var_map, verbose = FALSE))
+    }, error = function(e) {
+      empirical_result(NULL)
+      showNotification(paste("Empirical test error:", e$message), type = "error")
+    })
+  })
+
+  output$empirical_test_results_ui <- renderUI({
+    render_empirical_results(empirical_result())
   })
 
   # ── Download synthesis ────────────────────────────────────────────────────
@@ -1006,6 +1163,104 @@ render_theory_comparison <- function(cmp, skipped = NULL) {
       "start testing against data, since a violation would count as evidence against ",
       "that theory specifically.", style = "font-size:12px; color:#888;"),
     do.call(div, cards)
+  )
+}
+
+
+# ── Helper: render a single tested-implication row with real stats ────────────
+render_test_row <- function(r) {
+  violated <- grepl("^VIOLATED", r$conclusion)
+  row_class <- if (violated) "test-row test-row-violated" else "test-row test-row-consistent"
+  verdict <- if (violated) {
+    span("VIOLATED", class = "test-verdict verdict-violated")
+  } else {
+    span("consistent", class = "test-verdict verdict-consistent")
+  }
+  z_txt <- if (is.null(r$Z) || is.na(r$Z) || r$Z == "" || r$Z == "(nothing)") {
+    "(no conditioning set)"
+  } else {
+    paste("given", r$Z)
+  }
+  div(class = row_class,
+    span(r$X, class = "ci-var"),
+    span("⊥", class = "ci-symbol"),
+    span(r$Y, class = "ci-var"),
+    span(z_txt, class = "ci-cond-label"),
+    verdict,
+    span(sprintf("estimate=%.3f, p=%.3g", r$estimate, r$p_value), class = "test-stat")
+  )
+}
+
+# ── Helper: render cauda.test_implications_compare() results ──────────────────
+# Per Cox's explicit framing this is empirical CRITICISM, not confirmation --
+# the summary/notes below are written to keep that distinction visible rather
+# than reading like a scoreboard of which theory "won".
+render_empirical_results <- function(cmp) {
+  if (is.null(cmp)) {
+    return(p("Map at least one DAG node to a real data column, then click ",
+             "'Test Implications Against Real Data'.", class = "empty-hint"))
+  }
+
+  summ <- cmp$summary
+  summary_table <- tags$table(class = "summary-table",
+    tags$thead(tags$tr(
+      tags$th("Theory"), tags$th("Tested"), tags$th("Untestable"),
+      tags$th("Violated"), tags$th("% Survived")
+    )),
+    tags$tbody(
+      lapply(seq_len(nrow(summ)), function(i) {
+        tags$tr(
+          tags$td(summ$theory[i]),
+          tags$td(summ$n_tested[i]),
+          tags$td(summ$n_untestable[i]),
+          tags$td(summ$n_violated[i]),
+          tags$td(if (is.na(summ$pct_survived[i])) "—" else paste0(summ$pct_survived[i], "%"))
+        )
+      })
+    )
+  )
+
+  theory_sections <- lapply(names(cmp$per_theory), function(nm) {
+    res <- cmp$per_theory[[nm]]
+    color <- theory_color(nm, names(cmp$per_theory))
+
+    tested_ui <- if (!is.null(res$tested) && nrow(res$tested) > 0) {
+      div(do.call(tagList, lapply(seq_len(nrow(res$tested)), function(i) render_test_row(res$tested[i, ]))))
+    } else {
+      p("No implications had full data coverage.", class = "empty-hint")
+    }
+
+    untestable_ui <- if (!is.null(res$untestable) && nrow(res$untestable) > 0) {
+      tags$details(
+        tags$summary(sprintf("%d untestable implication(s) — no data mapped", nrow(res$untestable)),
+                     class = "show-more-toggle"),
+        div(do.call(tagList, lapply(seq_len(nrow(res$untestable)), function(i) {
+          r <- res$untestable[i, ]
+          div(class = "untestable-row",
+            sprintf("%s ⊥ %s | %s — %s", r$X, r$Y, r$Z, r$reason))
+        })))
+      )
+    } else NULL
+
+    div(class = "theory-card", style = paste0("border-left-color:", color, ";"),
+      div(style = "margin-bottom:8px;",
+        span(nm, class = "theory-badge", style = paste0("background:", color, ";"))
+      ),
+      tested_ui,
+      untestable_ui
+    )
+  })
+
+  div(
+    h4("Empirical Test Results", style = "border-bottom:2px solid #c0392b; padding-bottom:8px;"),
+    summary_table,
+    p(strong("Reading this: "), "\"% survived\" is the share of a theory's TESTABLE ",
+      "implications that were NOT contradicted by data — a measure of how much a theory ",
+      "has survived empirical criticism so far, not a probability it is \"true\". Theories ",
+      "differ a lot in how much of their claim chain current public data can even speak to ",
+      "(see the untestable counts) — that gap is itself a real finding, not a limitation of ",
+      "this tool.", style = "font-size:12px; color:#888; margin-bottom:16px;"),
+    do.call(div, theory_sections)
   )
 }
 
