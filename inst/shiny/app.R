@@ -206,7 +206,7 @@ ui <- fluidPage(
         # ── TEST AGAINST REAL DATA (Cox workflow step 5) ─────────────────────
         tabPanel("Test Against Real Data",
           br(),
-          p("Checks each theory's testable implications against real public data. ",
+          p("Checks each theory's testable implications against real data. ",
             "A DAG's node labels are abstract claim text ('Purdue marketing', ",
             "'psychosocial despair') that don't literally match a data column, so ",
             "map each node to the real variable that measures it below. Implications ",
@@ -216,9 +216,27 @@ ui <- fluidPage(
           p(strong("Run 'Compare Papers as Competing Theories' first"),
             " — this tab tests the same per-paper DAGs built there.",
             style = "font-size:12px; color:#c0392b;"),
-          actionButton("load_real_data_btn", "Load Real Opioid Dataset (CDC + DEA ARCOS)",
-                       class = "btn-sm btn-info"),
-          br(), br(),
+          radioButtons("real_data_source", "Data source:",
+                       choices = c("Bundled opioid dataset (CDC + DEA ARCOS)" = "bundled",
+                                   "Upload your own CSV" = "upload"),
+                       selected = "bundled", inline = TRUE),
+          conditionalPanel(
+            condition = "input.real_data_source == 'bundled'",
+            p("Real CDC overdose-death counts and DEA pill-distribution volumes ",
+              "by state/year — only useful for opioid-crisis papers.",
+              style = "font-size:12px; color:#888;"),
+            actionButton("load_real_data_btn", "Load Real Opioid Dataset",
+                         class = "btn-sm btn-info")
+          ),
+          conditionalPanel(
+            condition = "input.real_data_source == 'upload'",
+            p("Bring your own real dataset for any topic. First row must be a header; ",
+              "each column becomes a variable you can map to a DAG node below.",
+              style = "font-size:12px; color:#888;"),
+            fileInput("real_data_upload", NULL, accept = c(".csv"), buttonLabel = "Browse...",
+                      placeholder = "No CSV selected")
+          ),
+          br(),
           uiOutput("real_data_status_ui"),
           br(),
           uiOutput("var_map_ui"),
@@ -838,12 +856,14 @@ server <- function(input, output, session) {
   })
 
   # ── TEST AGAINST REAL DATA (Cox workflow step 5) ───────────────────────────
-  # NOTE: purpose-built for the opioid dataset first (per plan confirmed with
-  # user) — inst/extdata/opioid_real_data.csv, built by
-  # data-raw/build_opioid_test_data.R from CDC VSRR + DEA ARCOS. Loading it
-  # via system.file() (not a relative path) so this works both in local
-  # devtools::load_all() sessions and once the package is installed on
-  # shinyapps.io, same pattern the rest of the app already relies on.
+  # Two data sources feed the same `real_data()` reactive:
+  #  (a) the bundled opioid dataset — inst/extdata/opioid_real_data.csv, built
+  #      by data-raw/build_opioid_test_data.R from CDC VSRR + DEA ARCOS.
+  #      Loaded via system.file() so it works both in local devtools::load_all()
+  #      sessions and once the package is installed on shinyapps.io.
+  #  (b) any user-uploaded CSV, for topics we don't have a bundled dataset for.
+  # Everything downstream (var_map_ui, run_empirical_test_btn) is agnostic to
+  # which source populated real_data() — it just needs a data frame.
   observeEvent(input$load_real_data_btn, {
     path <- system.file("extdata", "opioid_real_data.csv", package = "cauda")
     if (path == "" || !file.exists(path)) {
@@ -858,6 +878,21 @@ server <- function(input, output, session) {
     })
   })
 
+  observeEvent(input$real_data_upload, {
+    file <- input$real_data_upload
+    if (is.null(file)) return()
+    tryCatch({
+      df <- read.csv(file$datapath, stringsAsFactors = FALSE)
+      if (ncol(df) < 2) {
+        showNotification("That CSV only has one column — need at least an ID column and one variable to map.", type = "error")
+        return()
+      }
+      real_data(df)
+    }, error = function(e) {
+      showNotification(paste("Failed to read uploaded CSV:", e$message), type = "error")
+    })
+  })
+
   output$real_data_status_ui <- renderUI({
     df <- real_data()
     if (is.null(df)) {
@@ -866,9 +901,7 @@ server <- function(input, output, session) {
     id_cols  <- intersect(c("state", "state_name", "year"), names(df))
     val_cols <- setdiff(names(df), id_cols)
     div(
-      p(sprintf("✓ Loaded %d rows (%s) x %d columns.", nrow(df),
-                if ("year" %in% names(df)) paste0(min(df$year, na.rm=TRUE), "-", max(df$year, na.rm=TRUE)) else "?",
-                ncol(df)),
+      p(sprintf("✓ Loaded %d rows x %d columns.", nrow(df), ncol(df)),
         style = "color:#27ae60; font-weight:bold; font-size:0.9em;"),
       p(strong("Real variables available to map: "), paste(val_cols, collapse = ", "),
         style = "font-size:0.85em; color:#555;")
