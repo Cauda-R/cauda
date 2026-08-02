@@ -1779,21 +1779,28 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   # a tight band close to cauda.dag()'s reference values at every node count,
   # and the Shiny app grows plotOutput's height with node count instead (see
   # app.R's `height = function() ...` on the dag_plot renderPlot).
+  # NOTE (fixed 2026-08-02): the previous version truncated display names to
+  # as few as 13 characters BEFORE wrapping for graphs >20 nodes — since the
+  # Shiny app already grows the plot canvas with node count (see app.R's
+  # `height = function() ...` on dag_plot), that character budget was far
+  # too stingy and left labels looking like "framework a…" with no way to
+  # tell what the node actually was. Budgets below are roughly doubled, and
+  # the line cap raised from 2 to 3, since the taller canvas has the room.
   n_nodes <- length(node_names)
-  trunc_len   <- if (n_nodes <= 8) 24 else if (n_nodes <= 14) 20 else if (n_nodes <= 20) 16 else 13
+  trunc_len   <- if (n_nodes <= 8) 48 else if (n_nodes <= 14) 40 else if (n_nodes <= 20) 34 else if (n_nodes <= 30) 28 else 24
   display_node_names <- ifelse(
     nchar(display_node_names) > trunc_len,
     paste0(substr(display_node_names, 1, trunc_len - 2), "…"),
     display_node_names
   )
 
-  # Cap wrapped labels at 2 lines max (join any extra words onto the last
-  # line) so text height never grows past what a small circle holds.
+  # Cap wrapped labels at 3 lines max (join any extra words onto the last
+  # line) — was 2, raised along with trunc_len above.
   wrap_label_capped <- function(x) {
     wrapped <- wrap_label(x)
     lines <- strsplit(wrapped, "\n")[[1]]
-    if (length(lines) > 2) {
-      lines <- c(lines[1], paste(lines[2:length(lines)], collapse = " "))
+    if (length(lines) > 3) {
+      lines <- c(lines[1:2], paste(lines[3:length(lines)], collapse = " "))
     }
     paste(lines, collapse = "\n")
   }
@@ -1803,9 +1810,11 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   # node count — a small step down for bigger graphs, never collapsing to
   # unreadable. The actual room to breathe comes from the bigger canvas
   # (app.R sizes the plot height to n_nodes) and the wider layout spread
-  # below, not from shrinking the glyphs themselves.
-  label_cex   <- if (n_nodes <= 8) 0.50 else if (n_nodes <= 14) 0.46 else if (n_nodes <= 20) 0.42 else 0.40
-  vertex_size <- if (n_nodes <= 8) 22   else if (n_nodes <= 14) 20   else if (n_nodes <= 20) 19   else 18
+  # below, not from shrinking the glyphs themselves. vertex_size bumped up
+  # slightly across the board (was 22/20/19/18) to give the now-longer
+  # labels a bigger circle to sit inside.
+  label_cex   <- if (n_nodes <= 8) 0.50 else if (n_nodes <= 14) 0.46 else if (n_nodes <= 20) 0.43 else if (n_nodes <= 30) 0.40 else 0.38
+  vertex_size <- if (n_nodes <= 8) 26   else if (n_nodes <= 14) 25   else if (n_nodes <= 20) 24   else if (n_nodes <= 30) 23   else 22
 
   # Layout with graphopt — higher charge/repulsion pushes nodes further
   # apart as the graph grows, which is what actually stops neighboring
