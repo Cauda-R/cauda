@@ -138,10 +138,16 @@ ui <- fluidPage(
                 actionButton("add_edge_btn", "Add Edge", class = "btn-sm btn-primary"),
                 hr(),
                 h6("Current Edges"),
-                p("Click an edge to select it, then use buttons below.", style="font-size:11px; color:#888;"),
+                p("Click an edge to select it, then use buttons below. ",
+                  span("●", style="color:#2ecc71;"), " = backed by a paper, ",
+                  span("●", style="color:#ccc;"), " = no source.",
+                  style="font-size:11px; color:#888;"),
                 div(style="max-height:250px; overflow-y:auto;",
                   uiOutput("edge_list_ui")
                 ),
+                br(),
+                h6("Selected Edge Source"),
+                uiOutput("edge_source_ui"),
                 br(),
                 actionButton("reverse_edge_btn", "Reverse Selected", class = "btn-sm btn-warning"),
                 actionButton("delete_edge_btn",  "Delete Selected",  class = "btn-sm btn-danger"),
@@ -457,17 +463,26 @@ server <- function(input, output, session) {
       dag_obj(dag)
 
       # Seed custom_edges from the DAG's edge_metadata (display names + pathway,
-      # not the sanitized bnlearn node names arcs() would return)
+      # not the sanitized bnlearn node names arcs() would return). Also carry
+      # through paper_id/verbatim_quote/claim_id so the edge list can show
+      # provenance — this is the source-traceability requirement from Cox's
+      # workflow ("preserve the source of every proposed edge so users can
+      # trace it back to the paper and ideally the exact supporting text").
       edge_meta <- attr(dag, "edge_metadata")
       if (!is.null(edge_meta) && nrow(edge_meta) > 0) {
         custom_edges(data.frame(
-          from    = edge_meta$from_display,
-          to      = edge_meta$to_display,
-          pathway = edge_meta$pathway,
+          from           = edge_meta$from_display,
+          to             = edge_meta$to_display,
+          pathway        = edge_meta$pathway,
+          paper_id       = if ("paper_id" %in% names(edge_meta)) edge_meta$paper_id else NA_character_,
+          verbatim_quote = if ("verbatim_quote" %in% names(edge_meta)) edge_meta$verbatim_quote else NA_character_,
+          claim_id       = if ("claim_id" %in% names(edge_meta)) edge_meta$claim_id else NA_character_,
           stringsAsFactors = FALSE
         ))
       } else {
-        custom_edges(data.frame(from=character(), to=character(), pathway=character(), stringsAsFactors=FALSE))
+        custom_edges(data.frame(from=character(), to=character(), pathway=character(),
+                                 paper_id=character(), verbatim_quote=character(), claim_id=character(),
+                                 stringsAsFactors=FALSE))
       }
 
       replot_dag()
@@ -478,15 +493,23 @@ server <- function(input, output, session) {
   })
 
   # ── DAG edge list UI ──────────────────────────────────────────────────────
+  # Edges that came from an extracted claim carry a paper_id; a small dot
+  # marks those as sourced vs. hand-added/edited (no paper_id) so it's visible
+  # at a glance which edges in the DAG are backed by a paper and which aren't.
   output$edge_list_ui <- renderUI({
     edges <- custom_edges()
     if (is.null(edges) || nrow(edges) == 0) return(p("No edges.", style="color:#888; font-size:12px;"))
     sel <- selected_edge()
+    has_source <- "paper_id" %in% names(edges)
 
     rows <- lapply(seq_len(nrow(edges)), function(i) {
       bg <- if (!is.null(sel) && sel == i) "#d5e8d4" else "transparent"
+      sourced <- has_source && !is.na(edges$paper_id[i]) && edges$paper_id[i] != ""
+      dot <- span(style=paste0("display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; background:",
+                                if (sourced) "#2ecc71" else "#ccc", ";"), title = if (sourced) "Sourced from a paper" else "No source")
       div(class="edge-row", style=paste0("cursor:pointer; background:", bg, ";"),
         onclick = sprintf("Shiny.setInputValue('selected_edge_click', %d, {priority: 'event'})", i),
+        dot,
         span(edges$from[i], style="font-weight:600;"),
         " → ",
         span(edges$to[i])
@@ -497,6 +520,37 @@ server <- function(input, output, session) {
 
   observeEvent(input$selected_edge_click, {
     selected_edge(input$selected_edge_click)
+  })
+
+  # ── Selected-edge source panel ─────────────────────────────────────────────
+  # Shows exactly which paper + verbatim quote produced the selected edge, or
+  # says plainly that it has none (added by hand, or reversed and therefore no
+  # longer verbatim-supported in that direction). This is the UI half of the
+  # source-traceability feature — the data half lives in cauda.claims_to_dag()'s
+  # edge_metadata (see R/10-cauda.R). Added 2026-08-01 per Cox's request.
+  output$edge_source_ui <- renderUI({
+    edges <- custom_edges()
+    sel   <- selected_edge()
+    if (is.null(edges) || is.null(sel) || nrow(edges) == 0 || sel > nrow(edges)) {
+      return(p("Click an edge above to see its source.", style="font-size:11px; color:#888; font-style:italic;"))
+    }
+    pid   <- if ("paper_id" %in% names(edges)) edges$paper_id[sel] else NA
+    quote <- if ("verbatim_quote" %in% names(edges)) edges$verbatim_quote[sel] else NA
+
+    if (is.na(pid) || pid == "") {
+      div(style="background:#fff3cd; border:1px solid #ffe08a; border-radius:4px; padding:8px; font-size:11px;",
+        strong("No source — "),
+        "this edge was added or reversed by hand and isn't backed by a specific paper or quote."
+      )
+    } else {
+      div(style="background:#eafaf1; border:1px solid #a3e4c1; border-radius:4px; padding:8px; font-size:11px;",
+        div(strong("Source paper: "), pid, style="margin-bottom:4px;"),
+        if (!is.na(quote) && quote != "")
+          div(style="font-style:italic; color:#333;", paste0('"', quote, '"'))
+        else
+          div(style="color:#888;", "(no verbatim quote recorded for this claim)")
+      )
+    }
   })
 
   # ── Add edge ──────────────────────────────────────────────────────────────
@@ -510,10 +564,15 @@ server <- function(input, output, session) {
     f <- trimws(input$edge_from)
     t <- trimws(input$edge_to)
     if (f == "" || t == "") return()
-    edges <- custom_edges() %||% data.frame(from=character(), to=character(), pathway=character(), stringsAsFactors=FALSE)
-    # Prevent duplicate
+    edges <- custom_edges() %||% data.frame(from=character(), to=character(), pathway=character(),
+                                             paper_id=character(), verbatim_quote=character(), claim_id=character(),
+                                             stringsAsFactors=FALSE)
+    # Prevent duplicate. Hand-added edges get NA paper_id/verbatim_quote —
+    # that's the flag the edge list / source panel use to show "no source".
     if (!any(edges$from == f & edges$to == t))
-      custom_edges(rbind(edges, data.frame(from=f, to=t, pathway="unknown", stringsAsFactors=FALSE)))
+      custom_edges(rbind(edges, data.frame(from=f, to=t, pathway="unknown",
+                                            paper_id=NA_character_, verbatim_quote=NA_character_, claim_id=NA_character_,
+                                            stringsAsFactors=FALSE)))
     updateTextInput(session, "edge_from", value="")
     updateTextInput(session, "edge_to",   value="")
     replot_dag()
@@ -527,6 +586,13 @@ server <- function(input, output, session) {
     tmp <- edges$from[sel]
     edges$from[sel] <- edges$to[sel]
     edges$to[sel]   <- tmp
+    # A reversed edge no longer matches the direction its verbatim quote
+    # actually supported, so its source provenance is cleared — showing the
+    # original paper/quote next to a flipped arrow would misrepresent what
+    # that paper said.
+    if ("paper_id" %in% names(edges))       edges$paper_id[sel]       <- NA_character_
+    if ("verbatim_quote" %in% names(edges)) edges$verbatim_quote[sel] <- NA_character_
+    if ("claim_id" %in% names(edges))       edges$claim_id[sel]       <- NA_character_
     custom_edges(edges)
     replot_dag()
   })
@@ -570,11 +636,15 @@ server <- function(input, output, session) {
       new_dag <- bnlearn::empty.graph(safe)
 
       # Rebuild edge_metadata (from/to safe names, display names, pathway) so
-      # cauda.dag_theory() keeps pathway coloring and readable labels post-edit
+      # cauda.dag_theory() keeps pathway coloring and readable labels post-edit.
+      # paper_id/verbatim_quote/claim_id are carried through too so the DAG
+      # object itself stays a complete record of provenance, not just the
+      # custom_edges() reactive the UI reads from.
       edge_metadata <- data.frame(
         from = character(), to = character(),
         from_display = character(), to_display = character(),
         pathway = character(), established = logical(),
+        paper_id = character(), verbatim_quote = character(), claim_id = character(),
         stringsAsFactors = FALSE
       )
 
@@ -585,11 +655,15 @@ server <- function(input, output, session) {
           tryCatch({
             new_dag <- bnlearn::set.arc(new_dag, from = f, to = t)
             pw <- if (!is.null(edges$pathway)) edges$pathway[i] else NA
+            pid   <- if ("paper_id" %in% names(edges)) edges$paper_id[i] else NA_character_
+            quote <- if ("verbatim_quote" %in% names(edges)) edges$verbatim_quote[i] else NA_character_
+            cid   <- if ("claim_id" %in% names(edges)) edges$claim_id[i] else NA_character_
             edge_metadata <- rbind(edge_metadata, data.frame(
               from = f, to = t,
               from_display = edges$from[i], to_display = edges$to[i],
               pathway = if (is.null(pw) || is.na(pw) || pw == "") "unknown" else pw,
               established = TRUE,
+              paper_id = pid, verbatim_quote = quote, claim_id = cid,
               stringsAsFactors = FALSE
             ))
           }, error = function(e) {

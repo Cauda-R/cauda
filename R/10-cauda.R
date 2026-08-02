@@ -1466,13 +1466,27 @@ cauda.claims_to_dag <- function(claims,
   dag <- bnlearn::empty.graph(safe_nodes)
 
   # Add edges from directed claims
+  # NOTE: paper_id / verbatim_quote / claim_id are carried through here so the
+  # Shiny DAG editor can show, per edge, exactly which paper and exact quote
+  # it came from (Cox's requested requirement: "preserve the source of every
+  # proposed edge so users can trace it back to the paper and ideally the
+  # exact supporting text"). claim_id is synthesized as "<paper_id>#<row>"
+  # since claims don't carry a stable ID of their own — it's stable within a
+  # single extraction run, which is all the DAG editor needs it for (matching
+  # an edge back to its row in the Detailed Claims tab). Edges added by hand
+  # in the DAG editor never go through this function, so they simply never
+  # get these fields populated — app.R treats that absence as the signal to
+  # show "no source — added manually". (Added 2026-08-01.)
   edge_metadata <- data.frame(
-    from         = character(),
-    to           = character(),
-    from_display = character(),
-    to_display   = character(),
-    pathway      = character(),
-    established  = logical(),
+    from           = character(),
+    to             = character(),
+    from_display   = character(),
+    to_display     = character(),
+    pathway        = character(),
+    established    = logical(),
+    paper_id       = character(),
+    verbatim_quote = character(),
+    claim_id       = character(),
     stringsAsFactors = FALSE
   )
 
@@ -1481,6 +1495,8 @@ cauda.claims_to_dag <- function(claims,
     to   <- causal_claims$target[i]
     pathway     <- causal_claims$pathway[i]
     established <- causal_claims$established[i]
+    paper_id    <- if ("paper_id" %in% names(causal_claims)) causal_claims$paper_id[i] else NA_character_
+    quote       <- if ("verbatim_quote" %in% names(causal_claims)) causal_claims$verbatim_quote[i] else NA_character_
 
     if (!is.na(from) && !is.na(to) && from != "" && to != "") {
       from_safe <- node_lookup[from]
@@ -1488,12 +1504,15 @@ cauda.claims_to_dag <- function(claims,
       tryCatch({
         dag <- bnlearn::set.arc(dag, from = from_safe, to = to_safe)
         edge_metadata <- rbind(edge_metadata, data.frame(
-          from         = from_safe,
-          to           = to_safe,
-          from_display = from,
-          to_display   = to,
-          pathway      = if (is.na(pathway)) "unknown" else pathway,
-          established  = if (is.na(established)) TRUE else established,
+          from           = from_safe,
+          to             = to_safe,
+          from_display   = from,
+          to_display     = to,
+          pathway        = if (is.na(pathway)) "unknown" else pathway,
+          established    = if (is.na(established)) TRUE else established,
+          paper_id       = if (is.na(paper_id)) NA_character_ else paper_id,
+          verbatim_quote = if (is.na(quote)) NA_character_ else quote,
+          claim_id       = paste0(if (is.na(paper_id)) "paper" else paper_id, "#", i),
           stringsAsFactors = FALSE
         ))
       }, error = function(e) {
