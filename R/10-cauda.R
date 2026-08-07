@@ -1624,16 +1624,22 @@ cauda.validate_dag <- function(extracted_dag, ground_truth_dag, verbose = TRUE) 
 # Distinguishes between established (solid) and speculative (dashed) claims
 #
 # Arguments:
-#   dag       : bnlearn bn object from cauda.claims_to_dag()
-#   highlight : node to highlight in red
-#   verbose   : print summary
+#   dag         : bnlearn bn object from cauda.claims_to_dag()
+#   highlight   : node to highlight in red
+#   verbose     : print summary
+#   label_scale : multiplier applied to the auto-computed node label font
+#                 size (default 1 = the auto size below, tuned small so
+#                 labels don't get cut off by default). Callers (e.g. the
+#                 Shiny app) can expose this as a user-adjustable slider so
+#                 people can size up if they want bigger text and don't mind
+#                 some overlap/cutoff on dense graphs.
 #
 # Returns:
 #   Invisible NULL (plots to screen)
 #
 # =============================================================================
 
-cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
+cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE, label_scale = 1) {
 
   if (!requireNamespace("bnlearn", quietly = TRUE)) {
     stop("bnlearn required. Install with: install.packages('bnlearn')")
@@ -1814,6 +1820,7 @@ cauda.dag_theory <- function(dag, highlight = NULL, verbose = TRUE) {
   # slightly across the board (was 22/20/19/18) to give the now-longer
   # labels a bigger circle to sit inside.
   label_cex   <- if (n_nodes <= 8) 0.50 else if (n_nodes <= 14) 0.46 else if (n_nodes <= 20) 0.43 else if (n_nodes <= 30) 0.40 else 0.38
+  label_cex   <- label_cex * label_scale
   vertex_size <- if (n_nodes <= 8) 26   else if (n_nodes <= 14) 25   else if (n_nodes <= 20) 24   else if (n_nodes <= 30) 23   else 22
 
   # Layout with graphopt — higher charge/repulsion pushes nodes further

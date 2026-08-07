@@ -145,6 +145,12 @@ ui <- fluidPage(
           br(),
           fluidRow(
             column(8,
+              div(style = "max-width:320px; margin-bottom:8px;",
+                sliderInput("dag_label_scale", "Node label font size",
+                            min = 0.5, max = 2.5, value = 1, step = 0.1, width = "100%")
+              ),
+              p("Starts small on purpose so labels don't get cut off on dense graphs — scale up if you want bigger text.",
+                style = "font-size:11px; color:#888; margin-top:-6px;"),
               plotOutput("dag_plot", height = "680px")
             ),
             column(4,
@@ -750,7 +756,7 @@ server <- function(input, output, session) {
       # 24 nodes ~ 1248px, capped at 1500px so it never runs away.
       output$dag_plot <- renderPlot({
         tryCatch(
-          cauda::cauda.dag_theory(new_dag, verbose=FALSE),
+          cauda::cauda.dag_theory(new_dag, verbose=FALSE, label_scale = input$dag_label_scale %||% 1),
           error = function(e) {
             plot(new_dag, main="Causal DAG")
           }
@@ -774,6 +780,16 @@ server <- function(input, output, session) {
       }, height = 680)
     })
   }
+
+  # Redraw with the new font size as soon as the slider moves, without
+  # requiring another edge edit or a click on "Replot DAG". replot_dag()
+  # rebuilds new_dag fresh from custom_edges()/all_claims() each time (not
+  # from dag_obj()), so calling it again here is safe and idempotent — it
+  # just re-renders the same edges at the new label_scale.
+  observeEvent(input$dag_label_scale, {
+    req(dag_obj())
+    replot_dag()
+  }, ignoreInit = TRUE)
 
   # ── DAGitty: testable implications ────────────────────────────────────────
   dagitty_res <- reactiveVal(NULL)   # cauda.dagitty() result for the current DAG
