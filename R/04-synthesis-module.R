@@ -93,11 +93,46 @@ cauda.synthesize <- function(text, claims, critique, verbose = TRUE) {
 }
 
 
+#' Build a representative excerpt of a paper's text for a synthesis sub-call.
+#'
+#' The synthesis sub-calls used to blindly truncate to the first N characters
+#' of the paper (10,000 for the summary, 3,000 for strengths/limitations).
+#' For any paper of normal length, that silently drops the Methods, Results,
+#' Limitations, and Discussion sections entirely, since they almost always
+#' appear well past the first few thousand characters — flagged by Prof. Cox
+#' (2026-08) after comparing this against his ASP framework, which is
+#' document-grounded rather than head-only. Fix: if the paper fits within
+#' max_chars, use it in full; otherwise take a head+tail sample so the
+#' excerpt still reaches the paper's ending (where limitations/discussion
+#' usually live), with an explicit marker where content was cut, rather than
+#' silently dropping the back half of the paper.
+#'
+#' @param text Character string, full paper text
+#' @param max_chars Character budget for the excerpt
+#' @param head_frac Fraction of max_chars taken from the start of the paper;
+#'   the remainder comes from the end. Lower this for sub-calls (like
+#'   limitations) where the relevant content skews toward the paper's end.
+#'
+#' @keywords internal
+smart_excerpt <- function(text, max_chars = 30000, head_frac = 0.55) {
+  n <- nchar(text)
+  if (n <= max_chars) return(text)
+  head_len <- floor(max_chars * head_frac)
+  tail_len <- max_chars - head_len
+  paste0(
+    substr(text, 1, head_len),
+    "\n\n[... middle of paper omitted for length ...]\n\n",
+    substr(text, n - tail_len + 1, n)
+  )
+}
+
+
 #' Generate Paper Summary
 #' @keywords internal
 generate_summary <- function(text, api_key, verbose) {
-  # Truncate text for summary
-  text_sample <- substr(text, 1, 10000)
+  # Was substr(text, 1, 10000) — see smart_excerpt() for why that silently
+  # dropped Methods/Results/Discussion on any paper of normal length.
+  text_sample <- smart_excerpt(text, max_chars = 40000, head_frac = 0.55)
 
   prompt <- paste0(
     "Provide a 2-3 sentence summary of this paper's main contribution and type:\n\n",
@@ -173,7 +208,8 @@ assess_strengths <- function(text, claims, critique, api_key, verbose) {
     "Be specific to THIS paper — do not use generic language.\n\n",
     "Evidence summary: ", evidence_summary, "\n\n",
     "Claims assessed:\n", claims_summary, "\n\n",
-    "Paper excerpt:\n", substr(text, 1, 3000), "\n\n",
+    # Was substr(text, 1, 3000) — see smart_excerpt() note in generate_summary()
+    "Paper excerpt:\n", smart_excerpt(text, max_chars = 30000, head_frac = 0.5), "\n\n",
     "Describe: (1) what the evidence actually shows, (2) methodological strengths, ",
     "(3) which claims have the strongest support and why. Be concrete."
   )
@@ -215,7 +251,10 @@ assess_limitations <- function(text, claims, critique, api_key, verbose) {
     "identify the key LIMITATIONS, gaps, and caveats in 4-5 sentences. ",
     "Be specific to THIS paper — no generic boilerplate.\n\n",
     "Evidence gaps identified by critique:\n", gaps_text, "\n\n",
-    "Paper excerpt:\n", substr(text, 1, 3000), "\n\n",
+    # Was substr(text, 1, 3000). Limitations/discussion sections skew toward
+    # the END of a paper more than any other sub-call here, so this uses a
+    # lower head_frac to weight the excerpt toward the paper's back half.
+    "Paper excerpt:\n", smart_excerpt(text, max_chars = 30000, head_frac = 0.35), "\n\n",
     "Cover: (1) sample size and generalizability, (2) confounders not addressed, ",
     "(3) mechanism gaps, (4) follow-up duration and long-term unknowns. ",
     "Use specific numbers and details from this paper."
@@ -292,6 +331,7 @@ create_claims_appraisal <- function(claims, critique) {
     source = claims$source,
     target = claims$target,
     causal_strength = critique$causal_strength,
+    warranted_claim_type = if ("warranted_claim_type" %in% names(critique)) critique$warranted_claim_type else NA_character_,
     support_category = critique$support_summary,
     confidence_original = claims$confidence,
     confidence_adjusted = critique$confidence_adjusted,

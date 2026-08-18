@@ -12,7 +12,18 @@
 #' @return Data frame with columns:
 #'   * All original claim columns
 #'   * critique: detailed critique of the claim
-#'   * causal_strength: "strong" / "moderate" / "weak" (how causal is this really?)
+#'   * causal_strength: "strong" / "moderate" / "weak" — based on identification
+#'     quality (does the design rule out confounding/reverse causation/selection?),
+#'     NOT effect size or mechanism plausibility (see note below)
+#'   * warranted_claim_type: the strongest claim type the evidence actually
+#'     supports — "association" / "conditional_association" / "causal_effect" /
+#'     "intervention_effect"
+#'   * observation_vs_interpretation: what the study actually observed, versus
+#'     the causal interpretation placed on top of it
+#'   * discrimination_check: what in this study (if anything) distinguishes this
+#'     edge from confounding, reverse causation, selection, or measurement error
+#'   * assumption_bridge: the assumptions that must hold for the evidence to
+#'     actually support the proposed causal edge
 #'   * key_gaps: critical evidence gaps
 #'   * confidence_adjusted: adjusted confidence after considering gaps
 #'   * support_summary: brief support assessment
@@ -44,6 +55,10 @@ cauda.critique <- function(claims, verbose = TRUE) {
   # Initialize critique columns
   claims$critique <- NA_character_
   claims$causal_strength <- NA_character_
+  claims$warranted_claim_type <- NA_character_
+  claims$observation_vs_interpretation <- NA_character_
+  claims$discrimination_check <- NA_character_
+  claims$assumption_bridge <- NA_character_
   claims$key_gaps <- NA_character_
   claims$confidence_adjusted <- NA_character_
   claims$support_summary <- NA_character_
@@ -72,12 +87,42 @@ cauda.critique <- function(claims, verbose = TRUE) {
     )
   }), collapse = "\n\n")
 
+  # NOTE (2026-08, per Prof. Cox's review comparing this against his ASP
+  # framework): this prompt used to grade CAUSAL_STRENGTH as
+  # "strong = clear experimental design + large effect + clear mechanism".
+  # That rubric is methodologically wrong — effect size is neither necessary
+  # nor sufficient for strong causal evidence, and a plausible mechanism
+  # doesn't rescue an unidentified observational comparison (nor is a known
+  # mechanism required for identification). CAUSAL_STRENGTH below is now
+  # graded on IDENTIFICATION quality (does the design/data actually rule out
+  # rival explanations?), not effect size or mechanism plausibility.
+  #
+  # Four fields adapted from ASP's methodology (kept lightweight — this is
+  # still one batched LLM judgment per claim, not ASP's full decomposed
+  # question-library architecture, which is a deliberate choice: CAUDA's
+  # distinct contribution is the DAG/discrimination layer downstream, not
+  # reproducing ASP's audit trail):
+  #   OBSERVATION_VS_INTERPRETATION — separates what the study actually
+  #     measured/observed from the causal interpretation layered on top.
+  #   WARRANTED_CLAIM_TYPE — the strongest claim type the evidence actually
+  #     supports, replacing a single strong/moderate/weak label with the
+  #     ASP-style discipline of naming the specific claim warranted.
+  #   DISCRIMINATION_CHECK — what in this study (if anything) rules out
+  #     confounding, reverse causation, selection, or measurement error for
+  #     THIS edge specifically.
+  #   ASSUMPTION_BRIDGE — the assumptions that must hold for the evidence to
+  #     actually support the proposed edge, stated explicitly rather than
+  #     left implicit.
   batch_prompt <- paste0(
     "You are a critical scientific reviewer. Evaluate each of these ", n, " causal claims from one paper.\n\n",
     "CLAIMS:\n\n", claims_text, "\n\n",
     "For EACH claim respond using EXACTLY this format (keep the ### CLAIM_N header):\n\n",
     "### CLAIM_1\n",
     "CAUSAL_STRENGTH: [strong/moderate/weak]\n",
+    "WARRANTED_CLAIM_TYPE: [association/conditional_association/causal_effect/intervention_effect]\n",
+    "OBSERVATION_VS_INTERPRETATION: [one sentence: what was actually observed, vs. the causal interpretation placed on it]\n",
+    "DISCRIMINATION_CHECK: [one sentence: what, if anything, rules out confounding, reverse causation, selection, or measurement error for this specific edge]\n",
+    "ASSUMPTION_BRIDGE: [one sentence: what must be assumed true for this evidence to support the proposed edge]\n",
     "KEY_GAPS: [2-3 most critical gaps, comma-separated]\n",
     "MECHANISM_VALID: [yes/no/unclear — does the proposed mechanism actually explain the outcome?]\n",
     "TRANSLATION_GAP: [one sentence: gap between mechanism and real-world effect, or 'none' if tight]\n",
@@ -88,9 +133,24 @@ cauda.critique <- function(claims, verbose = TRUE) {
     "...\n\n",
     "RULES:\n",
     "- Vary your assessments — not all claims have the same strength\n",
-    "- strong = clear experimental design + large effect + clear mechanism\n",
-    "- moderate = experimental but gaps in design, mechanism, or effect size\n",
-    "- weak = mainly correlational, indirect, or major confounds unaddressed\n",
+    "- CAUSAL_STRENGTH is about IDENTIFICATION, not effect size or mechanism:\n",
+    "  strong = the design/data plausibly rules out confounding, reverse causation,\n",
+    "  and selection for this specific edge (e.g. randomization, a credible\n",
+    "  quasi-experimental identification strategy, or strong triangulating\n",
+    "  evidence) — effect size and mechanism plausibility do NOT by themselves\n",
+    "  make an edge 'strong'\n",
+    "  moderate = a real identification strategy exists but has gaps (partial\n",
+    "  confounder control, weaker quasi-experimental design, unaddressed\n",
+    "  alternative explanations)\n",
+    "  weak = mainly correlational with no credible identification strategy, or\n",
+    "  major confounds/alternative explanations left unaddressed\n",
+    "- WARRANTED_CLAIM_TYPE: name the strongest claim the evidence actually\n",
+    "  supports — 'association' (bare correlation), 'conditional_association'\n",
+    "  (correlation after adjusting for some covariates, not identified),\n",
+    "  'causal_effect' (identified effect under stated assumptions),\n",
+    "  'intervention_effect' (evidence a specific intervention would work,\n",
+    "  the strongest claim type — requires the causal effect PLUS evidence the\n",
+    "  intervention actually changes the exposure as assumed)\n",
     "- well_supported = evidence clearly backs the claim as stated\n",
     "- partly_supported = some support but important gaps remain\n",
     "- questionable = evidence is weak, contradictory, or design is flawed\n",
@@ -103,7 +163,10 @@ cauda.critique <- function(claims, verbose = TRUE) {
       model = "gpt-4o",  # switched from gpt-4-turbo 2026-08-01 for cost (~4x cheaper, comparable quality)
       messages = list(list(role = "user", content = batch_prompt)),
       temperature = 0.2,
-      max_tokens = min(3500, 600 * n)
+      # Bumped per-claim budget (was 600) since the response format now has
+      # 4 more fields per claim (observation/interpretation, discrimination
+      # check, assumption bridge, warranted claim type).
+      max_tokens = min(6000, 900 * n)
     )
 
     response <- httr::POST(
@@ -151,8 +214,12 @@ cauda.critique <- function(claims, verbose = TRUE) {
         section <- substr(full_critique, start_pos + nchar(header), end_pos - 1L)
         parsed <- parse_critique_response(section)
 
-        claims$critique[i]            <- parsed$critique
-        claims$causal_strength[i]     <- parsed$causal_strength
+        claims$critique[i]                        <- parsed$critique
+        claims$causal_strength[i]                 <- parsed$causal_strength
+        claims$warranted_claim_type[i]             <- parsed$warranted_claim_type
+        claims$observation_vs_interpretation[i]    <- parsed$observation_vs_interpretation
+        claims$discrimination_check[i]             <- parsed$discrimination_check
+        claims$assumption_bridge[i]                <- parsed$assumption_bridge
         claims$key_gaps[i]            <- parsed$key_gaps
         claims$confidence_adjusted[i] <- parsed$confidence_adjusted
         claims$support_summary[i]     <- parsed$support_summary
@@ -201,12 +268,20 @@ build_critique_prompt <- function(row) {
     "2. Identify CRITICAL EVIDENCE GAPS (what's missing?)\n",
     "3. Assess alternative explanations not addressed\n",
     "4. Note any mechanism-to-real-world translation gaps\n",
-    "5. Rate: CAUSAL_STRENGTH (strong/moderate/weak)\n",
-    "6. Rate: SUPPORT_SUMMARY (well/partly/questionable supported)\n",
-    "7. Adjust confidence downward if major gaps exist\n\n",
+    "5. Rate: CAUSAL_STRENGTH (strong/moderate/weak) — based on whether the\n",
+    "   design/data rules out confounding, reverse causation, and selection for\n",
+    "   THIS edge, not on effect size or mechanism plausibility\n",
+    "6. Name: WARRANTED_CLAIM_TYPE — the strongest claim actually supported\n",
+    "   (association/conditional_association/causal_effect/intervention_effect)\n",
+    "7. Rate: SUPPORT_SUMMARY (well/partly/questionable supported)\n",
+    "8. Adjust confidence downward if major gaps exist\n\n",
 
     "RESPONSE FORMAT (use exactly these labels):\n",
-    "CAUSAL_STRENGTH: [strong/moderate/weak]\n",
+    "CAUSAL_STRENGTH: [strong/moderate/weak — identification quality, not effect size or mechanism]\n",
+    "WARRANTED_CLAIM_TYPE: [association/conditional_association/causal_effect/intervention_effect]\n",
+    "OBSERVATION_VS_INTERPRETATION: [what was actually observed, vs. the causal interpretation placed on it]\n",
+    "DISCRIMINATION_CHECK: [what, if anything, rules out confounding/reverse causation/selection/measurement error for this edge]\n",
+    "ASSUMPTION_BRIDGE: [what must be assumed true for this evidence to support the proposed edge]\n",
     "KEY_GAPS: [list 2-3 most critical gaps]\n",
     "MECHANISM_VALID: [does the proposed mechanism actually explain the outcome? yes/no/unclear]\n",
     "TRANSLATION_GAP: [explain: does mechanism → real-world effect work? is there a gap?]\n",
@@ -233,18 +308,28 @@ parse_critique_response <- function(critique_text) {
   lines <- strsplit(critique_text, "\n")[[1]]
 
   result <- list(
-    causal_strength     = "unknown",
-    key_gaps            = NA_character_,
-    mechanism_valid     = NA_character_,
-    translation_gap     = NA_character_,
-    confidence_adjusted = NA_character_,
-    support_summary     = NA_character_,
-    critique            = NA_character_
+    causal_strength                = "unknown",
+    warranted_claim_type           = NA_character_,
+    observation_vs_interpretation  = NA_character_,
+    discrimination_check           = NA_character_,
+    assumption_bridge              = NA_character_,
+    key_gaps                       = NA_character_,
+    mechanism_valid                = NA_character_,
+    translation_gap                = NA_character_,
+    confidence_adjusted            = NA_character_,
+    support_summary                = NA_character_,
+    critique                       = NA_character_
   )
 
-  # Known field header patterns — order matters for grepl matching
+  # Known field header patterns — order matters for grepl matching. Longer/
+  # more specific patterns are listed before shorter ones that could be a
+  # prefix match (none currently collide, but keep this order if adding more).
   field_patterns <- list(
-    causal_strength     = "^CAUSAL_STRENGTH:",
+    causal_strength                = "^CAUSAL_STRENGTH:",
+    warranted_claim_type           = "^WARRANTED_CLAIM_TYPE:",
+    observation_vs_interpretation  = "^OBSERVATION_VS_INTERPRETATION:",
+    discrimination_check           = "^DISCRIMINATION_CHECK:",
+    assumption_bridge              = "^ASSUMPTION_BRIDGE:",
     key_gaps            = "^KEY_GAPS:",
     mechanism_valid     = "^MECHANISM_VALID:",
     translation_gap     = "^TRANSLATION_GAP:",
@@ -260,6 +345,17 @@ parse_critique_response <- function(critique_text) {
     if (field == "causal_strength") {
       v <- tolower(value)
       result$causal_strength <<- if (grepl("strong|moderate|weak", v)) sub(".*(strong|moderate|weak).*", "\\1", v) else "unknown"
+    } else if (field == "warranted_claim_type") {
+      v <- tolower(value)
+      types <- c("intervention_effect", "causal_effect", "conditional_association", "association")
+      matched <- types[sapply(types, function(t) grepl(t, v, fixed = TRUE))]
+      result$warranted_claim_type <<- if (length(matched) > 0) matched[1] else NA_character_
+    } else if (field == "observation_vs_interpretation") {
+      result$observation_vs_interpretation <<- trimws(value)
+    } else if (field == "discrimination_check") {
+      result$discrimination_check <<- trimws(value)
+    } else if (field == "assumption_bridge") {
+      result$assumption_bridge <<- trimws(value)
     } else if (field == "confidence_adjusted") {
       v <- tolower(value)
       result$confidence_adjusted <<- if (grepl("high|medium|low", v)) sub(".*(high|medium|low).*", "\\1", v) else NA_character_

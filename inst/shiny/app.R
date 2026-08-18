@@ -1042,11 +1042,15 @@ render_critique_results <- function(crit) {
     r <- crit[i,]
     sc <- switch(r$causal_strength %||% "",
       strong="badge-high", moderate="badge-med", weak="badge-low", "badge-low")
+    claim_type <- r$warranted_claim_type %||% NA_character_
+    ct_label <- if (!is.na(claim_type)) gsub("_", " ", claim_type) else NULL
     div(style="margin-bottom:16px; padding:12px; border-left:4px solid #e74c3c;
                background:#fef5f5; border-radius:4px;",
       h5(paste0(r$source," → ",r$target), style="margin:0 0 6px;"),
       div(style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;",
         span(r$causal_strength %||% "?", class=paste("badge",sc)),
+        if (!is.null(ct_label))
+          span(ct_label, class="badge", style="background:#8e44ad;"),
         span(r$support_summary %||% "?", class="badge",
              style="background:#3498db;"),
         span(paste("adj:", r$confidence_adjusted %||% "?"),
@@ -1054,6 +1058,19 @@ render_critique_results <- function(crit) {
       ),
       if (!is.na(r$critique) && r$critique != "")
         p(r$critique, style="font-size:0.9em; margin:4px 0;"),
+      # Observation vs. interpretation, discrimination check, and assumption
+      # bridge — the ASP-inspired fields Cox suggested importing (2026-08).
+      # Kept visually lighter than the main critique text since they're
+      # meant as supporting rigor, not the headline.
+      if (!is.na(r$observation_vs_interpretation) && r$observation_vs_interpretation != "")
+        p(tags$em("Observed vs. interpreted: "), r$observation_vs_interpretation,
+          style="font-size:0.85em; color:#555; margin:4px 0;"),
+      if (!is.na(r$discrimination_check) && r$discrimination_check != "")
+        p(tags$em("Rules out alternatives? "), r$discrimination_check,
+          style="font-size:0.85em; color:#555; margin:4px 0;"),
+      if (!is.na(r$assumption_bridge) && r$assumption_bridge != "")
+        p(tags$em("Required assumptions: "), r$assumption_bridge,
+          style="font-size:0.85em; color:#555; margin:4px 0;"),
       if (!is.na(r$key_gaps) && r$key_gaps != "")
         div(style="margin-top:6px; padding:8px; background:#fff3cd; border-radius:3px;
                    font-size:0.88em;",
@@ -1062,6 +1079,10 @@ render_critique_results <- function(crit) {
   })
   div(h4("Critique Results",
          style="border-bottom:2px solid #e74c3c; padding-bottom:8px;"),
+      p("Causal strength reflects identification quality (does the design rule out confounding, ",
+        "reverse causation, and selection?), not effect size or mechanism plausibility. The purple ",
+        "badge names the strongest claim type actually warranted by the evidence.",
+        style="font-size:11px; color:#888; margin-top:-4px;"),
       do.call(div, rows))
 }
 
