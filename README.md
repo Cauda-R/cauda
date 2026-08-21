@@ -102,9 +102,10 @@ The tabular causal-discovery functions in Section 2 above do not call OpenAI and
 
 ## Known issues
 
-- **`cauda.analyze_papers()`, `cauda.batch_process()`, `cauda.papers_summary()`, `cauda.papers_metrics()`, `cauda.papers_anomalies()`, and `cauda.papers_quality_gates()`** (defined in `R/01-paper-core.R` and `R/02-paper.R`) are exported but not currently functional. `cauda.batch_process()` is a stub that returns an empty result set regardless of input, and the metrics it feeds into report fixed, hardcoded numbers rather than anything computed from your data. **Do not use this batch-processing pathway.** Use the pipeline in Section 1 above (`cauda.extract_pdf()` / `cauda.extract_multi()` → `cauda.claims_to_dag()` → `cauda.critique()` → `cauda.dagitty()` → `cauda.test_implications()`), which is real, is what the Shiny app uses, and is what produced every result reported in the paper.
 - **`cauda.analyze()`** calls `readline()` between steps and so requires an interactive R session; it will hang or error under `Rscript`, in a Shiny server process, or in any other non-interactive context. Call `cauda.dag()`, `cauda.corr()`, `cauda.pcorr()`, and `cauda.optimize()` directly instead for scripted or automated use.
 - Claim extraction (`cauda.extract()` / `cauda.extract_pdf()` / `cauda.extract_multi()`) asks the underlying language model to quote source text verbatim, but does not currently verify that the returned quotation actually appears in the source PDF before attaching it to a claim; a meaningful fraction of quotations are paraphrases, and a smaller fraction contain phrasing not present in the source at all. Treat a claim's quotation as a pointer to where to look in the source paper, not as a substitute for checking it yourself. See the paper's discussion of this for the full audit.
+
+A previous version of this package also exported `cauda.analyze_papers()`, `cauda.batch_process()`, `cauda.papers_summary()`, `cauda.papers_metrics()`, `cauda.papers_anomalies()`, and `cauda.papers_quality_gates()` (in `R/01-paper-core.R` and `R/02-paper.R`). These were never a working implementation — `cauda.batch_process()` was a stub that returned an empty result regardless of input, and the metrics it fed into were hardcoded rather than computed — and calling any of them referenced two other functions, `extract_claims_batch()` and `evaluate_single_paper_v2()`, that did not exist anywhere in the package. Nothing else in the package (including the Shiny app) depended on them, so they have been removed rather than fixed in place; use the pipeline in Section 1 above instead, which is what actually produced every result in the paper.
 
 ---
 
@@ -113,9 +114,7 @@ The tabular causal-discovery functions in Section 2 above do not call OpenAI and
 ```
 R/
 ├── 00-load-all.R              Package initialization
-├── 01-paper-core.R            Legacy batch-processing framework (see Known Issues)
 ├── 02-claims-extraction.R     Claim extraction (cauda.extract / extract_pdf / extract_multi)
-├── 02-paper.R                 Legacy cauda.analyze_papers() wrapper (see Known Issues)
 ├── 03-critique-module.R       Evidentiary critique of each claim
 ├── 04-synthesis-module.R      Narrative synthesis of claims + critique
 ├── 05-dagitty-module.R        DAG → dagitty conversion, testable-implication derivation

@@ -3,10 +3,14 @@ Title: Causal Automated Unified Data Analysis
 Version: 0.0.0.9000
 Authors@R:
     person("Aadi", "Soni", , "mr.aadi.soni@gmail.com", role = c("aut", "cre"))
-Description: A simple, high-level toolkit for exploratory causal data
-    analysis. Provides automated causal discovery, graph editing,
-    correlation networks, partial dependence plots, decision optimization,
-    and conditional independence testing for tabular data frames.
+Description: Two independent toolkits for causal analysis. The first
+    extracts causal claims from academic papers with source-quotation
+    provenance, assembles them into directed acyclic graphs, critiques
+    each claim's evidentiary strength, derives each graph's testable
+    conditional-independence implications via dagitty, and tests those
+    implications against a real dataset. The second learns a causal DAG
+    directly from a tabular data frame, alongside correlation networks,
+    partial dependence plots, and decision optimization.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
