@@ -1,3 +1,130 @@
+#' Verify Extracted Quotes Against Source Text
+#'
+#' Checks each claim's `verbatim_quote` against the actual source text it was
+#' supposedly drawn from, and flags quotes that don't actually appear there.
+#' This closes the gap documented in the accompanying paper's Section 4.3 and
+#'7: the extraction prompt instructs the model to quote exactly, but nothing
+#' previously checked whether it complied, and roughly 15% of quotations
+#' across that paper's two applications turned out to contain interpretive
+#' framing the source paper never states. This function is that check.
+#'
+#' Matching is done in three tiers, from strictest to loosest: (1) an exact
+#' substring match after whitespace normalization, (2) an approximate match
+#' via [agrepl()] within `max_distance` (a fraction of the quote's own
+#' length) to catch trivial OCR/whitespace/typographic differences without
+#' being fooled by a genuine paraphrase, and (3) anything that fails both is
+#' flagged as not found — which per Section 4.3's audit is the right default
+#' bucket for a paraphrase or fabrication, not something to guess at.
+#'
+#' @param claims Data frame with a `verbatim_quote` column, as returned by
+#'   [cauda.extract()].
+#' @param source_text The full source text the claims were extracted from
+#'   (same string passed to [cauda.extract()], or the paper's raw text).
+#' @param max_distance Numeric in \[0, 1\). Maximum edit distance, as a
+#'   fraction of the quote's length, still counted as a match. Default 0.15
+#'   (deliberately tight — this is meant to catch near-identical text, not
+#'   loose paraphrases; anything looser than this should be flagged, not
+#'   silently passed).
+#' @param verbose Logical. Print a verification summary. Default `TRUE`.
+#'
+#' @return `claims` with two columns added: `quote_verified` (logical) and
+#'   `quote_verification` (character, one of `"exact match"`, a near-exact
+#'   match message, `"NOT FOUND in source text -- treat as unverified
+#'   (possible paraphrase or fabrication)"`, or `"no quote provided"`).
+#'
+#' @examples
+#' \dontrun{
+#'   claims <- cauda.extract_pdf("paper.pdf", paper_id = "paper1")
+#'   # cauda.extract_pdf() already runs this automatically; to re-check
+#'   # (e.g. with a different threshold) or verify claims from another source:
+#'   text <- paste(pdftools::pdf_text("paper.pdf"), collapse = "\n")
+#'   claims <- cauda.verify_quotes(claims, text)
+#'   mean(claims$quote_verified)
+#' }
+#'
+#' @export
+cauda.verify_quotes <- function(claims, source_text, max_distance = 0.15, verbose = TRUE) {
+
+  if (nrow(claims) == 0) {
+    claims$quote_verified <- logical(0)
+    claims$quote_verification <- character(0)
+    return(claims)
+  }
+
+  # Normalizes whitespace AND common Unicode punctuation variants (curly
+  # quotes, em/en dashes, non-breaking hyphens) to their plain-ASCII
+  # equivalents before comparing. Without this, a genuinely verbatim quote
+  # fails a naive string match purely because the PDF renders "-" as an
+  # em-dash or a straight quote as a curly one -- a typographic difference,
+  # not a content difference, and treating it as "not found" would produce
+  # false positives on the very fabrication check this function exists to
+  # perform. (Discovered during testing: without this normalization, a
+  # genuinely verbatim sentence from the real opioid Theory B source paper
+  # was wrongly flagged as unverified solely because of em-dash/curly-quote
+  # rendering differences.)
+  #
+  # All remaining quote marks (' and ") are then stripped entirely, not just
+  # normalized to straight quotes. Reason: when the LLM extractor emits a
+  # verbatim_quote as a JSON string value, a nested double quote in the
+  # source (e.g. a term the source itself puts in quotes, like "deaths of
+  # despair") gets serialized as a single quote to avoid escaping conflicts
+  # inside the JSON string. That's a serialization artifact of the
+  # extraction pipeline, not a content change, so quote-mark type must not
+  # be load-bearing for the verbatim match. (Discovered during testing: the
+  # Case & Deaton "deaths of despair" sentence -- genuinely verbatim -- was
+  # flagged NOT FOUND solely because the source's double-quoted term came
+  # back from the LLM wrapped in single quotes.)
+  .norm <- function(x) {
+    x <- gsub("[‘’ʼ´`]", "'", x)
+    x <- gsub("[“”]", '"', x)
+    x <- gsub("[–—−]", "-", x)
+    x <- gsub("['\"]", "", x)
+    x <- gsub("\\s+", " ", x)
+    trimws(x)
+  }
+  source_norm <- .norm(source_text)
+
+  status <- vapply(claims$verbatim_quote, function(q) {
+    if (is.na(q) || .norm(q) == "") return("no quote provided")
+    q_norm <- .norm(q)
+
+    if (grepl(q_norm, source_norm, fixed = TRUE)) return("exact match")
+
+    found <- tryCatch(
+      isTRUE(agrepl(q_norm, source_norm, max.distance = max_distance, ignore.case = TRUE)),
+      error = function(e) FALSE
+    )
+
+    if (found) {
+      sprintf("near-exact match (within %.0f%% edit distance)", max_distance * 100)
+    } else {
+      "NOT FOUND in source text -- treat as unverified (possible paraphrase or fabrication)"
+    }
+  }, character(1), USE.NAMES = FALSE)
+
+  claims$quote_verification <- status
+  claims$quote_verified <- status == "exact match" | grepl("^near-exact", status)
+
+  if (verbose) {
+    n_ok <- sum(claims$quote_verified)
+    cat("=== Quote Verification ===\n")
+    cat(sprintf("Verified: %d / %d claims (%.0f%%)\n", n_ok, nrow(claims), 100 * n_ok / nrow(claims)))
+    flagged <- claims[!claims$quote_verified, , drop = FALSE]
+    if (nrow(flagged) > 0) {
+      cat("\nFlagged (quote not found verbatim or near-verbatim in source text):\n")
+      for (i in seq_len(nrow(flagged))) {
+        cat(sprintf('  [%s -> %s]  "%s"\n',
+                     flagged$source[i], flagged$target[i],
+                     substr(flagged$verbatim_quote[i], 1, 90)))
+      }
+    }
+    cat("\n")
+  }
+
+  claims
+}
+
+
 #' Extract Causal Claims from Academic Text (Hybrid Module 0 + Cauda)
 #'
 #' Extracts causal and causal-ish claims from any academic paper type —
@@ -16,6 +143,11 @@
 #' @param max_tokens Integer. Default: 4000
 #' @param paper_id Optional string to tag claims with source paper. Default: NULL
 #' @param return_raw_text Logical. Return raw GPT JSON string. Default: FALSE
+#' @param verify_quotes Logical. Automatically check every returned claim's
+#'   `verbatim_quote` against this call's own source text via
+#'   [cauda.verify_quotes()], adding `quote_verified`/`quote_verification`
+#'   columns. Default: TRUE. See that function's documentation for what
+#'   "verified" means and why this check exists.
 #' @param verbose Logical. Print status messages. Default: TRUE
 #'
 #' @return Data frame with columns:
@@ -23,7 +155,9 @@
 #'   claim_type (causal_effect/mechanism/mediation/interaction/moderation/association),
 #'   claim_class (A/B/C/D), causal_trigger, policy_trigger, claim_scope,
 #'   confidence (high/medium/low), effect_size, p_value, sample_size,
-#'   pathway, established, evidence, notes
+#'   pathway, established, evidence, notes, and (when `verify_quotes = TRUE`,
+#'   the default) quote_verified, quote_verification -- see
+#'   [cauda.verify_quotes()]
 #'
 #' @export
 #' @importFrom httr POST add_headers status_code content
@@ -35,6 +169,7 @@ cauda.extract <- function(
   max_tokens   = 4000,
   paper_id     = NULL,
   return_raw_text = FALSE,
+  verify_quotes = TRUE,
   verbose      = TRUE
 ) {
 
@@ -200,6 +335,11 @@ cauda.extract <- function(
     if (return_raw_text) return(raw_json)
 
     claims_df <- parse_claims_json(raw_json, paper_id = paper_id)
+
+    if (verify_quotes && nrow(claims_df) > 0) {
+      claims_df <- cauda.verify_quotes(claims_df, text, verbose = verbose)
+    }
+
     attr(claims_df, "raw_response")  <- raw_json
     attr(claims_df, "study_summary") <- tryCatch({
       parsed <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)
@@ -315,6 +455,8 @@ parse_claims_json <- function(raw_json, paper_id = NULL) {
     established    = logical(),
     evidence       = character(),
     notes          = character(),
+    quote_verified = logical(),
+    quote_verification = character(),
     stringsAsFactors = FALSE
   )
 }

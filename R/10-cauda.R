@@ -1389,26 +1389,207 @@ cauda.independence <- function(df, target = NULL, threshold = 0.05, verbose = TR
 # and significantly improved with GPT-4-turbo, better prompting, and structured evidence extraction
 
 
-# =============================================================================
-# cauda.claims_to_dag()
-# Convert extracted claims into a bnlearn DAG object
-#
-# Arguments:
-#   claims     : output from cauda.extract() or cauda.extract_pdf()
-#   confidence_threshold : minimum confidence to include ("low", "medium", "high")
-#   include_speculative : include claims marked established=FALSE
-#   verbose    : print summary
-#
-# Returns:
-#   A bnlearn bn object (directed acyclic graph) with metadata:
-#   - attr(dag, "edge_metadata") : tibble of edges with pathway & evidence info
-#   - attr(dag, "pathway_colors") : color mapping for visualization
-#
-# =============================================================================
+#' Convert Extracted Claims into a bnlearn DAG Object
+#'
+#' Builds a directed graph from claims produced by [cauda.extract()] /
+#' [cauda.extract_pdf()], retaining only claims typed as a causal effect,
+#' mechanism, mediation, interaction, or moderation (excludes bare
+#' associations — see the paper's Section 3.2 "claim-type filter").
+#'
+#' @param claims Output from [cauda.extract()] or [cauda.extract_pdf()].
+#' @param confidence_threshold Minimum confidence to include: "low",
+#'   "medium", or "high". Default "low".
+#' @param include_speculative Include claims marked `established = FALSE`.
+#'   Default `TRUE`.
+#' @param canonicalize_nodes Logical. If `TRUE` (default), merge node labels
+#'   that are near-duplicates of each other (e.g. "OxyContin's introduction
+#'   and marketing" vs. "OxyContin exposure") into a single canonical node,
+#'   rather than treating them as separate nodes purely because of wording.
+#'   Set `FALSE` to reproduce the old, unmerged behavior exactly.
+#' @param node_merge_threshold Numeric in \[0, 1\]. Two node labels are merged
+#'   when their Levenshtein distance, normalized by the longer label's
+#'   length, is at or below this threshold. Default 0.25 (labels differing
+#'   by up to a quarter of their length are merged). Only used when
+#'   `canonicalize_nodes = TRUE`.
+#' @param verbose Logical. Print a summary, including which node labels were
+#'   merged. Default `TRUE`.
+#'
+#' @return A bnlearn `bn` object (directed acyclic graph) with metadata:
+#'   * `attr(dag, "edge_metadata")`: data frame of edges with pathway,
+#'     source-paper, and verbatim-quote provenance per edge
+#'   * `attr(dag, "display_lookup")`: sanitized node name -> human-readable label
+#'   * `attr(dag, "node_aliases")`: canonical label -> character vector of all
+#'     original raw labels merged into it (a group of length 1 means nothing
+#'     was merged for that node)
+#'   * `attr(dag, "pathway_colors")`: color mapping for visualization
+#'
+#' @export
+#' @importFrom bnlearn empty.graph set.arc
+
+# Dispatcher: try LLM-based semantic canonicalization first (catches
+# same-construct labels that are worded completely differently, e.g.
+# "OxyContin exposure" vs. "OxyContin's introduction and marketing" — the
+# exact case documented in the paper's Section 6.3 that pure string
+# similarity cannot catch, since the two phrasings share almost no
+# characters). Falls back to the cheap, offline edit-distance method (which
+# still catches near-literal duplicates like "triplicate prescription
+# programs" vs. "triplicate prescription regulation") when no API key is
+# available or the API call fails, so this function never hard-requires
+# network access.
+.cauda.canonicalize_labels <- function(labels, threshold = 0.25, verbose = FALSE) {
+  llm_map <- tryCatch(.cauda.canonicalize_labels_llm(labels), error = function(e) NULL)
+  if (!is.null(llm_map)) {
+    attr(llm_map, "method") <- "llm (semantic)"
+    return(llm_map)
+  }
+  edit_map <- .cauda.canonicalize_labels_editdist(labels, threshold = threshold)
+  attr(edit_map, "method") <- "edit-distance (offline fallback — no OPENAI_API_KEY or API call failed)"
+  edit_map
+}
+
+# LLM-based semantic canonicalization. Returns NULL (signaling "fall back to
+# edit-distance") if no API key is set or the call fails for any reason —
+# this is a best-effort enhancement, not a required step.
+.cauda.canonicalize_labels_llm <- function(labels, model = "gpt-4o-mini") {
+  if (length(labels) <= 1) return(stats::setNames(labels, labels))
+
+  api_key <- Sys.getenv("OPENAI_API_KEY")
+  if (api_key == "" || nchar(api_key) < 10) return(NULL)
+  if (!requireNamespace("httr", quietly = TRUE) || !requireNamespace("jsonlite", quietly = TRUE)) return(NULL)
+
+  prompt <- paste0(
+    "You will be given a numbered list of short variable/node labels extracted from a single ",
+    "academic paper by an automated causal-claim extraction pipeline. Some labels are different ",
+    "phrasings of the exact same real-world construct, purely because the extraction model worded ",
+    "them differently when it encountered the same idea in different passages of the paper -- for ",
+    "example \"OxyContin exposure\" and \"OxyContin's introduction and marketing\" can both describe ",
+    "the same underlying causal factor. Others are genuinely different constructs that merely sound ",
+    "related.\n\n",
+    "Group the labels below into clusters of labels that refer to the SAME underlying construct. ",
+    "Be conservative: only merge labels you are confident describe the same thing, not just related ",
+    "or topically similar things. In particular, do NOT merge a specific measurable quantity (a ",
+    "volume, dose, count, price, or rate -- something a real dataset would have a numeric column ",
+    "for) with a broader qualitative label about exposure, awareness, or marketing, even if the two ",
+    "are causally related steps in the same story -- e.g. \"OxyContin distribution\" (a pill-volume ",
+    "quantity) should stay separate from \"OxyContin exposure\" or \"OxyContin marketing\" (a ",
+    "qualitative construct), because collapsing them would erase a distinction a real-data test needs ",
+    "to keep. A label with no duplicates should be its own cluster of one.\n\n",
+    "Labels:\n",
+    paste(sprintf("%d. %s", seq_along(labels), labels), collapse = "\n"),
+    "\n\nReturn ONLY valid JSON: an array of clusters, each cluster an array of the integer indices ",
+    "(from the numbered list above) that belong together. No markdown, no commentary. ",
+    "Example: [[1,3],[2],[4,5,6]]"
+  )
+
+  body <- list(
+    model       = model,
+    messages    = list(list(role = "user", content = prompt)),
+    temperature = 0
+  )
+
+  result <- tryCatch({
+    resp <- httr::POST(
+      url = "https://api.openai.com/v1/chat/completions",
+      httr::add_headers(
+        `Authorization` = paste("Bearer", api_key),
+        `Content-Type`  = "application/json"
+      ),
+      body   = jsonlite::toJSON(body, auto_unbox = TRUE),
+      encode = "raw"
+    )
+    if (httr::status_code(resp) != 200) return(NULL)
+
+    raw_text <- httr::content(resp, as = "text", encoding = "UTF-8")
+    parsed   <- jsonlite::fromJSON(raw_text, simplifyVector = FALSE)
+    raw_json <- parsed$choices[[1]]$message$content
+    raw_json <- gsub("^```(?:json)?\\s*", "", raw_json, perl = TRUE)
+    raw_json <- gsub("\\s*```$", "", raw_json, perl = TRUE)
+    jsonlite::fromJSON(trimws(raw_json), simplifyVector = FALSE)
+  }, error = function(e) NULL)
+
+  if (is.null(result) || length(result) == 0) return(NULL)
+
+  canonical <- character(length(labels))
+  for (cluster in result) {
+    idx <- suppressWarnings(as.integer(unlist(cluster)))
+    idx <- idx[!is.na(idx) & idx >= 1 & idx <= length(labels)]
+    if (length(idx) == 0) next
+    members <- labels[idx]
+    tab   <- sort(table(members), decreasing = TRUE)
+    tied  <- names(tab)[tab == tab[1]]
+    rep_label <- tied[order(nchar(tied), tied)][1]
+    canonical[idx] <- rep_label
+  }
+  # Any label the model didn't place in a cluster keeps its own label
+  # (fail-safe: never drop a node just because the LLM's grouping was incomplete)
+  uncovered <- which(canonical == "")
+  canonical[uncovered] <- labels[uncovered]
+
+  stats::setNames(canonical, labels)
+}
+
+
+# Merge near-duplicate node labels via normalized edit distance. Returns a
+# named character vector mapping every input label (name) to its canonical
+# representative (value). Two labels are merged (via union-find over all
+# pairs) when their Levenshtein distance, normalized by the longer label's
+# character length, is <= threshold. The canonical label for each resulting
+# group is the most frequent original phrasing in that group (ties broken by
+# picking the shortest, then alphabetically first, for determinism). This is
+# the offline fallback used when no OpenAI API key is available — it only
+# catches near-literal duplicates, not semantic ones worded very differently
+# (see .cauda.canonicalize_labels_llm for that case).
+.cauda.canonicalize_labels_editdist <- function(labels, threshold = 0.25) {
+  n <- length(labels)
+  if (n <= 1) return(stats::setNames(labels, labels))
+
+  norm <- tolower(trimws(gsub("[[:punct:]]+", " ", labels)))
+  norm <- gsub("\\s+", " ", norm)
+
+  d <- utils::adist(norm)
+  maxlen <- outer(nchar(norm), nchar(norm), pmax)
+  maxlen[maxlen == 0] <- 1
+  sim_dist <- d / maxlen
+
+  parent <- seq_len(n)
+  find <- function(x) {
+    while (parent[x] != x) x <- parent[x]
+    x
+  }
+  union <- function(x, y) {
+    rx <- find(x); ry <- find(y)
+    if (rx != ry) parent[rx] <<- ry
+  }
+
+  for (i in seq_len(n - 1)) {
+    for (j in (i + 1):n) {
+      if (sim_dist[i, j] <= threshold) union(i, j)
+    }
+  }
+
+  clusters <- vapply(seq_len(n), find, integer(1))
+
+  canonical <- character(n)
+  for (cl in unique(clusters)) {
+    idx <- which(clusters == cl)
+    members <- labels[idx]
+    tab <- sort(table(members), decreasing = TRUE)
+    top_count <- tab[1]
+    tied <- names(tab)[tab == top_count]
+    # deterministic tiebreak: shortest label, then alphabetical
+    rep_label <- tied[order(nchar(tied), tied)][1]
+    canonical[idx] <- rep_label
+  }
+
+  stats::setNames(canonical, labels)
+}
+
 
 cauda.claims_to_dag <- function(claims,
                                 confidence_threshold = "low",
                                 include_speculative = TRUE,
+                                canonicalize_nodes = TRUE,
+                                node_merge_threshold = 0.25,
                                 verbose = TRUE) {
 
   if (!requireNamespace("bnlearn", quietly = TRUE)) {
@@ -1445,13 +1626,50 @@ cauda.claims_to_dag <- function(claims,
   # Extract unique nodes from directed claims only
   sources <- unique(causal_claims$source[!is.na(causal_claims$source) & causal_claims$source != ""])
   targets <- unique(causal_claims$target[!is.na(causal_claims$target) & causal_claims$target != ""])
-  all_nodes <- unique(c(sources, targets))
+  all_nodes_raw <- unique(c(sources, targets))
 
-  if (length(all_nodes) == 0) {
+  if (length(all_nodes_raw) == 0) {
     stop("No directed causal claims (causal_effect/mechanism/mediation/interaction/moderation) found to build a DAG.")
   }
 
+  # Node canonicalization: extraction runs on the same paper can phrase the
+  # same underlying construct two different ways (e.g. "OxyContin's
+  # introduction and marketing" vs. "OxyContin exposure"), which silently
+  # fragments what should be one node into two and understates the true
+  # fork/collider structure of the graph. This merges near-duplicate labels
+  # (normalized edit distance <= node_merge_threshold, as a fraction of the
+  # longer label's length) into a single canonical node, chosen as the most
+  # frequently occurring phrasing among the merged variants (ties broken by
+  # shortest label). Disclosed as a limitation in the paper's Section 7 prior
+  # to this fix; see cauda.claims_to_dag's `node_aliases` attribute for what
+  # got merged with what. Set canonicalize_nodes = FALSE to reproduce the
+  # old, unmerged behavior exactly.
+  node_canon_map <- if (canonicalize_nodes && length(all_nodes_raw) > 1) {
+    .cauda.canonicalize_labels(all_nodes_raw, threshold = node_merge_threshold)
+  } else {
+    stats::setNames(all_nodes_raw, all_nodes_raw)
+  }
+
+  causal_claims$source <- unname(node_canon_map[causal_claims$source])
+  causal_claims$target <- unname(node_canon_map[causal_claims$target])
+
+  all_nodes <- unique(unname(node_canon_map))
+
+  node_aliases <- lapply(split(names(node_canon_map), node_canon_map), function(x) x)
+
+  if (verbose && canonicalize_nodes && length(all_nodes_raw) > 1) {
+    cat("  Node canonicalization method:", attr(node_canon_map, "method"), "\n")
+  }
+
   if (verbose) {
+    merged <- Filter(function(x) length(x) > 1, node_aliases)
+    if (length(merged) > 0) {
+      cat("  Node canonicalization merged", length(merged), "group(s) of near-duplicate labels:\n")
+      for (canon in names(merged)) {
+        cat("    \"", canon, "\" <- ", paste(sprintf('"%s"', setdiff(merged[[canon]], canon)), collapse = ", "), "\n", sep = "")
+      }
+      cat("\n")
+    }
     cat("  Nodes:", length(all_nodes), "\n")
     print(all_nodes)
     cat("\n")
@@ -1524,6 +1742,7 @@ cauda.claims_to_dag <- function(claims,
   # Store metadata
   attr(dag, "edge_metadata")   <- edge_metadata
   attr(dag, "display_lookup")  <- display_lookup
+  attr(dag, "node_aliases")    <- node_aliases
   attr(dag, "pathway_colors") <- c(
     gateway = "#E84545",
     common_liability = "chartreuse4",
