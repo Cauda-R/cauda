@@ -23,13 +23,14 @@ knitr::opts_chunk$set(
 
 The package combines automated causal discovery, interactive graph editing, correlation analysis, machine learning-based visualizations, and decision optimization into a single consistent interface.
 
+This is a separate, independent capability from cauda's other toolkit for extracting causal claims from academic papers and testing them against real data — see the package [README](https://github.com/Cauda-R/cauda#readme) for that pipeline. Nothing on this page uses an LLM or requires an API key.
+
 ---
 
 ## Installation
 
 ```{r install, eval = FALSE}
-# Install from local source
-devtools::install("path/to/cauda R")
+remotes::install_github("Cauda-R/cauda")
 
 # Load the package
 library(cauda)
@@ -178,15 +179,14 @@ The `actionable` argument distinguishes variables you can actually intervene on 
 
 ---
 
-## Key Findings on TelcoChurn
+## What This Kind of Output Looks Like
 
-Running the full cauda pipeline on TelcoChurn reveals several actionable insights:
+This section is illustrative, not a reported result from a specific run — it describes the kind of pattern the walkthrough above is designed to surface if you ran it on a churn dataset shaped like TelcoChurn, so you know what to look for in your own output:
 
-- **Contract type** is the strongest protective factor against churn — customers on two-year contracts churn at dramatically lower rates than month-to-month customers
-- **Tech support** and **online security** significantly reduce churn when present
-- **Tenure** is strongly negatively correlated with churn — newer customers are the highest risk group
-- **International plan** and **customer service calls** are the strongest positive predictors of churn
-- **Gender** is completely isolated in the causal network — it has no dependency relationship with any other variable
+- A **contract-length** variable is a typical candidate for the strongest protective factor against churn in datasets like this
+- Support-related variables (tech support, online security) commonly show up as churn-reducing when present
+- **Tenure** commonly comes out strongly negatively associated with churn
+- Variables with no plausible causal link to the outcome (e.g. an identifier-like or demographic field) should show up isolated in the causal network — if one doesn't, that's worth a second look rather than taking the DAG at face value
 
 ---
 

@@ -3,7 +3,7 @@
 # This replaces the earlier claims.json-based test, which was built on
 # hand-authored stand-in data that didn't match the real source PDFs.
 
-real_claims <- jsonlite::fromJSON("real_extraction_output.json")
+real_claims <- jsonlite::fromJSON("validation/output/real_extraction_output.json")
 
 theory_names <- c(
   A_purdue_marketing    = "A: Purdue marketing / triplicate-law natural experiment",

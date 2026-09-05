@@ -46,7 +46,7 @@ test_result <- cauda.test_implications(dag, my_data, var_map)
 
 All of this is also available through the accompanying Shiny app, which adds interactive DAG editing and a guided real-data-mapping UI: **[live demo](https://aadisoni.shinyapps.io/cauda-paper-analysis/)** (tabs: Status & Summary, Detailed Claims, Critique, Synthesis, Causal DAG, Testable Implications, Compare Theories, Test Against Real Data).
 
-For the full method description, worked examples on real papers, and an honest accounting of what this pipeline does and does not currently do well, see the accompanying paper (`validation/reference_claims.md` and the `*_extraction_output.json` / `*.rds` files in this repo are the real inputs and outputs behind that paper's results).
+For the full method description, worked examples on real papers, and an honest accounting of what this pipeline does and does not currently do well, see the accompanying paper. `validation/reference_claims.md` and the extraction/test output files in `validation/output/` are the real inputs and outputs behind that paper's results, produced by the scripts in `validation/`.
 
 ---
 
@@ -107,6 +107,8 @@ The tabular causal-discovery functions in Section 2 above do not call OpenAI and
 
 A previous version of this package also exported `cauda.analyze_papers()`, `cauda.batch_process()`, `cauda.papers_summary()`, `cauda.papers_metrics()`, `cauda.papers_anomalies()`, and `cauda.papers_quality_gates()` (in `R/01-paper-core.R` and `R/02-paper.R`). These were never a working implementation — `cauda.batch_process()` was a stub that returned an empty result regardless of input, and the metrics it fed into were hardcoded rather than computed — and calling any of them referenced two other functions, `extract_claims_batch()` and `evaluate_single_paper_v2()`, that did not exist anywhere in the package. Nothing else in the package (including the Shiny app) depended on them, so they have been removed rather than fixed in place; use the pipeline in Section 1 above instead, which is what actually produced every result in the paper.
 
+`tests/test-extraction.R`, the package's only test file, has likewise been removed rather than left in place: it asserted a `claim_type` schema (`causal_effect`/`mechanism`/`conditional`/`dose-response`/`moderated`/`other`) that no longer matches what `cauda.extract()` actually returns (`causal_effect`/`mechanism`/`mediation`/`interaction`/`moderation`/`association`), so it no longer tested the real system and would have given false confidence either by failing outright or by testing the wrong thing. The package currently has no automated test coverage; a test suite written against the current extraction/DAG/dagitty/test-implications pipeline is a real gap, not yet filled.
+
 ---
 
 ## Package organization
@@ -120,13 +122,16 @@ R/
 ├── 05-dagitty-module.R        DAG → dagitty conversion, testable-implication derivation
 ├── 06-cauda-empirical-test.R  Testing implications against real data
 ├── 10-cauda.R                 DAG construction from claims + tabular causal discovery
-└── zzz.R                      Final initialization
+└── zzz.R                      Package load message
 
-inst/shiny/     Accompanying Shiny app
-validation/     Independently constructed reference claim set used to validate extraction
-data-raw/       Sample datasets for testing
-man/            Function documentation
-tests/          Package tests
+inst/shiny/         Accompanying Shiny app (deployed at the live demo link above)
+inst/extdata/       Real public dataset (CDC/DEA) used to test the opioid application's DAGs
+validation/         Scripts that ran the real pipeline on the paper's 8 source papers
+validation/output/  Their real, unedited output — the actual inputs behind the paper's results
+data-raw/           Provenance script + raw cache for the data in inst/extdata/
+man/                Function documentation (tabular-toolkit functions; extraction-pipeline
+                    functions are documented via roxygen comments in R/ pending a doc rebuild)
+vignettes/          Getting-started walkthrough for the tabular causal-discovery toolkit
 ```
 
 ---

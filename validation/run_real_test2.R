@@ -14,8 +14,8 @@ cat("\n\n=== Running cauda.test_implications_compare() on REAL extraction output
 cmp2 <- cauda.test_implications_compare(dag_list, real_data, var_map, verbose = TRUE)
 
 saveRDS(list(dag_list = dag_list, var_map = var_map, cmp = cmp2),
-        "real_opioid_test_implications_result.rds")
-cat("\nSaved real_opioid_test_implications_result.rds\n")
+        "validation/output/real_opioid_test_implications_result.rds")
+cat("\nSaved validation/output/real_opioid_test_implications_result.rds\n")
 
 # Also print each theory's edge list with claim_type, so we can see exactly
 # which claims survived the causal_effect/mechanism filter in claims_to_dag()

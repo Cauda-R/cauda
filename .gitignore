@@ -3,6 +3,6 @@
 .RData
 .Ruserdata
 .Renviron
-.Rbuildignore
 rsconnect/
 inst/shiny/rsconnect/
+.DS_Store

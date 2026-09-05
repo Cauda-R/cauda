@@ -1,6 +1,6 @@
 # Build DAGs from genuine UPF extraction output and inspect node structure.
 
-upf_claims <- jsonlite::fromJSON("upf_extraction_output.json")
+upf_claims <- jsonlite::fromJSON("validation/output/upf_extraction_output.json")
 
 upf_theory_names <- c(
   A_processing_causal     = "A: Processing itself causes overconsumption (Hall 2019 RCT)",
