@@ -1,6 +1,22 @@
 library(shiny)
 # cauda and pdftools loaded in global.R (handles shinyapps.io install too)
 
+# Shiny defaults to a 5MB upload cap. We originally set this via
+# options(shiny.maxRequestSize=...) at the top of global.R, but a live
+# diagnostic (temporarily printed in status_ui) proved that value was NEVER
+# taking effect on shinyapps.io -- getOption("shiny.maxRequestSize") still
+# read back as the 5MB default even though global.R was correctly bundled
+# and contained the line. Root cause: shinyapps.io's app-loading path for a
+# single-file app.R app doesn't reliably run global.R's options() call
+# before the file-upload handler reads it (loadSupport() ordering is not
+# guaranteed the way it is for a traditional ui.R/server.R app). Setting it
+# here, at the very top of app.R itself -- the file that is unambiguously
+# sourced to start the app -- is the fix. Bumped to 100MB (up from the
+# originally-assumed 30MB) since there's no official shinyapps.io doc
+# confirming a lower hard ceiling; community reports of a ~30MB proxy limit
+# turned out to be unrelated to this bug. (Fixed 2026-09-06.)
+options(shiny.maxRequestSize = 100 * 1024^2)
+
 ui <- fluidPage(
   titlePanel("Cauda — Causal Claim Extraction & DAG Comparison"),
 

@@ -1,11 +1,11 @@
 # global.R — runs once when the app starts (both locally and on shinyapps.io)
 # Ensures cauda package is available; installs from GitHub if missing.
 
-# Shiny defaults to a 5MB upload cap, which multi-PDF or larger CSV uploads
-# routinely exceed ("Maximum upload size exceeded"). Raised to 30MB, which is
-# roughly the ceiling shinyapps.io itself enforces regardless of this option
-# on the free/starter tiers -- setting this higher wouldn't help further.
-options(shiny.maxRequestSize = 30 * 1024^2)
+# NOTE: the authoritative options(shiny.maxRequestSize=...) call now lives
+# at the top of app.R, not here -- a live diagnostic proved this option set
+# in global.R was never actually taking effect on shinyapps.io for this
+# single-file app.R app (see the comment in app.R for the full story, fixed
+# 2026-09-06). Left unset here to avoid confusion about which value wins.
 
 if (!requireNamespace("cauda", quietly = TRUE)) {
   message("cauda not found — installing from GitHub...")
