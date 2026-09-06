@@ -105,6 +105,22 @@ cauda.test_implications <- function(dag, data, var_map, type = "basis.set",
     return(list(tested = empty, untestable = empty, n_tested = 0, n_untestable = 0, n_violated = 0))
   }
 
+  # Same order-independent duplicate that cauda.dagitty() dedupes (see the
+  # detailed comment there, fixed 2026-08-01): dagitty::impliedConditionalIndependencies()
+  # can return both "X _||_ Y | Z" and "Y _||_ X | Z" as separate entries for
+  # a common-cause/"star" DAG shape. cauda.dagitty() applies its dedup on the
+  # data frame it builds, but this function re-derives `implied` independently
+  # and never got the same fix, so a fork or collider graph tested here would
+  # silently count and test every implication twice -- inflating n_tested and
+  # n_violated and skewing pct_survived in cauda.test_implications_compare().
+  # Caught by test-test-implications.R while building this test suite.
+  if (length(implied) > 1) {
+    dedup_keys <- vapply(implied, function(ci) {
+      paste(paste(sort(c(ci$X, ci$Y)), collapse = " "), paste(sort(ci$Z), collapse = ","), sep = " || ")
+    }, character(1))
+    implied <- implied[!duplicated(dedup_keys)]
+  }
+
   to_display <- function(x) {
     if (!is.null(display_lookup)) {
       out <- unname(display_lookup[x])
