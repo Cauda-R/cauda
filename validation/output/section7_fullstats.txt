@@ -1,0 +1,13 @@
+n states = 48, missing-data handling = complete-case (states with any missing year excluded before aggregation)
+--- RAW COUNTS ---
+Heroin|Nat/semi (partial, given Pills)     r=0.3440 t=2.4844 df=46 p=0.016678 CI=[0.0663, 0.5722]
+Heroin~Nat/semi (unconditional)            r=0.7148 t=6.9324 df=46 p=1.1511e-08 CI=[0.5404, 0.8303]
+Synthetic~Heroin                           r=0.7168 t=6.9728 df=46 p=1.0011e-08 CI=[0.5434, 0.8316]
+Synthetic~Nat/semi                         r=0.9071 t=14.6162 df=46 p=6.6332e-19 CI=[0.8393, 0.9471]
+Synthetic~Pills                            r=0.9036 t=14.3033 df=46 p=1.5058e-18 CI=[0.8334, 0.9451]
+--- PER-CAPITA RATES ---
+Heroin|Nat/semi (partial, given Pills)     r=0.5731 t=4.7435 df=46 p=2.0677e-05 CI=[0.3452, 0.7372]
+Heroin~Nat/semi (unconditional)            r=0.4328 t=3.2562 df=46 p=0.0021233 CI=[0.1695, 0.6384]
+Synthetic~Heroin                           r=0.6872 t=6.4152 df=46 p=6.8899e-08 CI=[0.5008, 0.8126]
+Synthetic~Nat/semi                         r=0.4798 t=3.7087 df=46 p=0.00055941 CI=[0.2265, 0.6723]
+Synthetic~Pills                            r=0.2837 t=2.0066 df=46 p=0.050693 CI=[-0.0005, 0.5255]

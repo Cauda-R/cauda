@@ -1,0 +1,6 @@
+n states = 48
+rr1 partial (heroin_rate ~ natsemi_rate | pills_rate): r=0.5731 t=4.7435 df=46 p=0.00002
+runc unconditional (heroin_rate ~ natsemi_rate): r=0.4328 p=0.0021233
+rr2 (synth_rate ~ heroin_rate): r=0.6872 p=6.8899e-08
+rr3 (synth_rate ~ natsemi_rate): r=0.4798 p=0.00055941
+rr4 (synth_rate ~ pills_rate): r=0.2837 p=0.050693
