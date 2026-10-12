@@ -38,6 +38,9 @@
 #'     variables = cheapest/most direct to test against real data), ties
 #'     broken alphabetically by X then Y.
 #'   * `n_implications`: number of testable implications returned
+#'   * `implied_list`: the same implications as a list (conditioning sets as
+#'     character vectors), used by [cauda.dagitty_compare()]
+#'   * `display_lookup`: map from dagitty node names to display labels
 #'
 #' @examples
 #' \dontrun{
@@ -92,7 +95,8 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
     if (verbose) cat("No testable implications: every pair of nodes is adjacent (the DAG is saturated), ",
                       "or there are too few nodes to imply any conditional independence.\n", sep = "")
     return(list(dagitty = dg, dagitty_string = dagitty_string,
-                implied_CIs = empty_df, n_implications = 0))
+                implied_CIs = empty_df, n_implications = 0,
+                implied_list = list(), display_lookup = display_lookup))
   }
 
   to_display <- function(x) {
@@ -102,16 +106,31 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
     } else x
   }
 
-  ci_df <- do.call(rbind, lapply(implied, function(ci) {
+  # dagitty can group several targets into one implication (e.g.
+  # "Z _||_ X, Y"). Expand every implication into one entry per (X, Y) pair,
+  # keeping the conditioning set as a character vector of display labels (a
+  # comma-joined string is ambiguous when a label itself contains a comma).
+  # cauda.dagitty_compare() re-evaluates each entry by d-separation in rival
+  # DAGs.
+  ci_list <- list()
+  for (ci in implied) {
+    z_disp <- if (length(ci$Z) > 0) to_display(ci$Z) else character(0)
+    for (x in ci$X) for (y in ci$Y) {
+      ci_list[[length(ci_list) + 1]] <- list(X = to_display(x), Y = to_display(y), Z = z_disp)
+    }
+  }
+
+  ci_df <- do.call(rbind, lapply(ci_list, function(ci) {
     data.frame(
-      X = to_display(ci$X),
-      Y = to_display(ci$Y),
-      Z = if (length(ci$Z) > 0) paste(to_display(ci$Z), collapse = ", ") else "(nothing)",
+      X = ci$X,
+      Y = ci$Y,
+      Z = if (length(ci$Z) > 0) paste(ci$Z, collapse = ", ") else "(nothing)",
       n_z = length(ci$Z),
       stringsAsFactors = FALSE
     )
   }))
   rownames(ci_df) <- NULL
+  ci_df$idx <- seq_len(nrow(ci_df))
 
   # De-duplicate order-independent pairs: dagitty::impliedConditionalIndependencies()
   # can return BOTH "X _||_ Y | Z" and "Y _||_ X | Z" as separate entries for
@@ -139,7 +158,9 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
   # traversal order. n_z is dropped from the returned data frame afterward —
   # it's a display-ordering aid, not part of the public column contract.
   ci_df <- ci_df[order(ci_df$n_z, ci_df$X, ci_df$Y), ]
+  ci_list <- ci_list[ci_df$idx]
   ci_df$n_z <- NULL
+  ci_df$idx <- NULL
   rownames(ci_df) <- NULL
 
   if (verbose) {
@@ -155,7 +176,9 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
     dagitty        = dg,
     dagitty_string = dagitty_string,
     implied_CIs    = ci_df,
-    n_implications = nrow(ci_df)
+    n_implications = nrow(ci_df),
+    implied_list   = ci_list,
+    display_lookup = display_lookup
   )
 }
 
@@ -163,12 +186,21 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
 #' Compare Testable Implications Across Competing Theory DAGs
 #'
 #' Given a named list of cauda DAGs — one per competing causal theory of the
-#' same phenomenon — computes each theory's testable implications and flags
-#' which implications are unique to a single theory. A "discriminating"
-#' implication (one that only one theory predicts) is the most useful place
-#' to look first when confronting theories with data: if it's violated, that
-#' theory alone takes the hit, whereas implications shared by every theory
-#' can't help you tell the theories apart.
+#' same phenomenon — computes each theory's testable implications and checks
+#' each one against every rival DAG by d-separation. An implication
+#' `X _||_ Y | Z` from theory T is **discriminating** when at least one rival
+#' DAG U contains all of X, Y and Z as nodes and does NOT entail the
+#' independence (X and Y are d-connected given Z in U). Such an implication is
+#' the most useful place to look first when confronting theories with data:
+#' if it is violated, T takes the hit while U survives that test.
+#'
+#' The check is by d-separation, not by comparing printed implication lists.
+#' A basis set is only one generating set of a graph's independence
+#' constraints, so an implication absent from rival U's basis set can still be
+#' entailed by U; comparing lists alone would wrongly call such an
+#' implication discriminating. Implications that mention a variable absent
+#' from a rival are reported as not evaluable in that rival, and are never
+#' counted as discriminating against it.
 #'
 #' Per Cox's framing, this is meant as a tool for empirical criticism of
 #' rival theories, NOT for declaring one DAG "the true model" — observational
@@ -183,9 +215,13 @@ cauda.dagitty <- function(dag, type = "basis.set", use_display_names = TRUE, ver
 #' @return A list with:
 #'   * `per_theory`: named list of each theory's full `cauda.dagitty()` result
 #'   * `all_implications`: data frame of every implication from every theory,
-#'     tagged with which theory it came from
-#'   * `discriminating`: subset of `all_implications` where the same
-#'     `X _||_ Y | Z` triple appears under only one theory
+#'     tagged with `theory` and with the rival-theory columns
+#'     `entailed_by` (rivals whose DAG implies the same independence),
+#'     `not_entailed_by` (rivals that contain all the variables but allow
+#'     dependence), `not_evaluable_in` (rivals missing a variable), and
+#'     `discriminating` (TRUE when `not_entailed_by` is non-empty)
+#'   * `discriminating`: the rows of `all_implications` with
+#'     `discriminating == TRUE`
 #'
 #' @examples
 #' \dontrun{
@@ -206,12 +242,44 @@ cauda.dagitty_compare <- function(dag_list, verbose = TRUE) {
 
   per_theory <- lapply(dag_list, cauda.dagitty, verbose = FALSE)
 
-  all_ci <- do.call(rbind, lapply(names(per_theory), function(nm) {
+  # Does theory `res` entail X _||_ Y | Z (labels are display labels)?
+  # TRUE = entailed (d-separated); FALSE = dependence allowed; NA = a
+  # variable is not a node of that theory's DAG, so it cannot be evaluated.
+  entails <- function(res, ci) {
+    lk <- res$display_lookup
+    to_node <- function(lbl) {
+      if (length(lbl) == 0) return(character(0))
+      if (is.null(lk)) return(lbl)
+      m <- names(lk)[match(lbl, unname(lk))]
+      ifelse(is.na(m), lbl, m)
+    }
+    x <- to_node(ci$X); y <- to_node(ci$Y); z <- to_node(ci$Z)
+    nodes <- names(res$dagitty)
+    if (!all(c(x, y, z) %in% nodes)) return(NA)
+    dagitty::dseparated(res$dagitty, x, y, z)
+  }
+
+  theory_names <- names(per_theory)
+
+  all_ci <- do.call(rbind, lapply(theory_names, function(nm) {
     df <- per_theory[[nm]]$implied_CIs
     if (nrow(df) == 0) return(NULL)
+    lst <- per_theory[[nm]]$implied_list
+    rivals <- setdiff(theory_names, nm)
+    verdicts <- lapply(lst, function(ci) {
+      vapply(rivals, function(r) entails(per_theory[[r]], ci), logical(1))
+    })
+    pick <- function(v, want) {
+      if (length(v) == 0) return("")
+      paste(names(v)[!is.na(v) & v == want], collapse = ", ")
+    }
     df$theory <- nm
-    # order-independent key so X_||_Y|Z and Y_||_X|Z collapse to the same row
-    df$key <- paste(pmin(df$X, df$Y), pmax(df$X, df$Y), df$Z, sep = " || ")
+    df$entailed_by      <- vapply(verdicts, pick, character(1), want = TRUE)
+    df$not_entailed_by  <- vapply(verdicts, pick, character(1), want = FALSE)
+    df$not_evaluable_in <- vapply(verdicts, function(v) {
+      if (length(v) == 0) "" else paste(names(v)[is.na(v)], collapse = ", ")
+    }, character(1))
+    df$discriminating   <- nzchar(df$not_entailed_by)
     df
   }))
 
@@ -222,18 +290,17 @@ cauda.dagitty_compare <- function(dag_list, verbose = TRUE) {
                 discriminating = data.frame()))
   }
 
-  key_counts     <- table(all_ci$key)
-  discriminating <- all_ci[all_ci$key %in% names(key_counts[key_counts == 1]), ]
-  discriminating$key <- NULL
-  all_ci$key <- NULL
+  rownames(all_ci) <- NULL
+  discriminating <- all_ci[all_ci$discriminating, ]
+  rownames(discriminating) <- NULL
 
   if (verbose) {
     cat("=== Cross-Theory Implication Comparison ===\n")
     cat("Theories:", paste(names(dag_list), collapse = ", "), "\n")
     cat("Total implications across all theories:", nrow(all_ci), "\n")
-    cat("Discriminating implications (unique to one theory):", nrow(discriminating), "\n\n")
+    cat("Discriminating implications (a rival DAG allows dependence):", nrow(discriminating), "\n\n")
     if (nrow(discriminating) > 0) {
-      print(discriminating[, c("theory", "X", "Y", "Z")], row.names = FALSE)
+      print(discriminating[, c("theory", "X", "Y", "Z", "not_entailed_by")], row.names = FALSE)
     }
     cat("\n")
   }

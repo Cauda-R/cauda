@@ -17,19 +17,32 @@ A list with:
 \itemize{
 \item \code{per_theory}: named list of each theory's full \code{cauda.dagitty()} result
 \item \code{all_implications}: data frame of every implication from every theory,
-tagged with which theory it came from
-\item \code{discriminating}: subset of \code{all_implications} where the same
-\verb{X _||_ Y | Z} triple appears under only one theory
+tagged with \code{theory} and with the rival-theory columns
+\code{entailed_by} (rivals whose DAG implies the same independence),
+\code{not_entailed_by} (rivals that contain all the variables but allow
+dependence), \code{not_evaluable_in} (rivals missing a variable), and
+\code{discriminating} (TRUE when \code{not_entailed_by} is non-empty)
+\item \code{discriminating}: the rows of \code{all_implications} with
+\code{discriminating == TRUE}
 }
 }
 \description{
 Given a named list of cauda DAGs — one per competing causal theory of the
-same phenomenon — computes each theory's testable implications and flags
-which implications are unique to a single theory. A "discriminating"
-implication (one that only one theory predicts) is the most useful place
-to look first when confronting theories with data: if it's violated, that
-theory alone takes the hit, whereas implications shared by every theory
-can't help you tell the theories apart.
+same phenomenon — computes each theory's testable implications and checks
+each one against every rival DAG by d-separation. An implication
+\verb{X _||_ Y | Z} from theory T is \strong{discriminating} when at least one rival
+DAG U contains all of X, Y and Z as nodes and does NOT entail the
+independence (X and Y are d-connected given Z in U). Such an implication is
+the most useful place to look first when confronting theories with data:
+if it is violated, T takes the hit while U survives that test.
+
+The check is by d-separation, not by comparing printed implication lists.
+A basis set is only one generating set of a graph's independence
+constraints, so an implication absent from rival U's basis set can still be
+entailed by U; comparing lists alone would wrongly call such an
+implication discriminating. Implications that mention a variable absent
+from a rival are reported as not evaluable in that rival, and are never
+counted as discriminating against it.
 }
 \details{
 Per Cox's framing, this is meant as a tool for empirical criticism of

@@ -1234,7 +1234,7 @@ render_theory_comparison <- function(cmp, skipped = NULL) {
     div(class = "theory-card", style = paste0("border-left-color:", color, ";"),
       div(style = "margin-bottom:8px;",
         span(th, class = "theory-badge", style = paste0("background:", color, ";")),
-        span(sprintf("%d implication(s) unique to this theory", nrow(sub)),
+        span(sprintf("%d implication(s) a rival DAG does not entail", nrow(sub)),
              style = "color:#888; font-size:0.85em;")
       ),
       render_ci_list(sub, cap = 6)
@@ -1245,9 +1245,9 @@ render_theory_comparison <- function(cmp, skipped = NULL) {
     skip_note,
     h4(sprintf("%d Discriminating Implications Across %d Theories", nrow(disc), length(theories)),
        style = "border-bottom:2px solid #8e44ad; padding-bottom:8px;"),
-    p("Each implication below is predicted by exactly one theory — the best place to ",
-      "start testing against data, since a violation would count as evidence against ",
-      "that theory specifically.", style = "font-size:12px; color:#888;"),
+    p("Each implication below is entailed by one theory's DAG and not entailed by at ",
+      "least one rival DAG (checked by d-separation). A violation counts against the ",
+      "theory that predicts it, not the rivals that allow dependence.", style = "font-size:12px; color:#888;"),
     do.call(div, cards)
   )
 }

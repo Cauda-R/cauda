@@ -45,6 +45,8 @@ Sorted with the simplest implications first (fewest conditioning
 variables = cheapest/most direct to test against real data), ties
 broken alphabetically by X then Y.
 \item \code{n_implications}: number of testable implications returned
+\item \code{implied_list}: the same implications as a list (conditioning sets as character vectors), used by \code{\link[=cauda.dagitty_compare]{cauda.dagitty_compare()}}
+\item \code{display_lookup}: map from dagitty node names to display labels
 }
 }
 \description{

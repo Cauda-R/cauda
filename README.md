@@ -31,7 +31,8 @@ implications$implied_CIs      # data frame of implied conditional independencies
 cat(implications$dagitty_string)  # paste into https://dagitty.net for interactive editing
 
 # 5. Comparing multiple theories? Derive implications for each DAG and see which
-#    implications are shared vs. unique to one theory
+#    implications a rival DAG does not entail (checked by d-separation, not by
+#    comparing implication lists)
 comparison <- cauda.dagitty_compare(list(theoryA = dagA, theoryB = dagB))
 
 # 6. Test implications against a real dataset you provide

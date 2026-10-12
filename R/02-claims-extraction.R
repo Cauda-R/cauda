@@ -341,6 +341,19 @@ cauda.extract <- function(
     }
 
     attr(claims_df, "raw_response")  <- raw_json
+    # Reproducibility record: the API reports the exact model snapshot that
+    # served the request (e.g. "gpt-4o-2024-08-06"), which differs from the
+    # requested alias ("gpt-4o") and can change over time. Keep it, along with
+    # the sampling settings, so a reported extraction can be traced to a run.
+    attr(claims_df, "run_metadata") <- list(
+      requested_model    = model,
+      returned_model     = if (is.null(result$model)) NA_character_ else result$model,
+      system_fingerprint = if (is.null(result$system_fingerprint)) NA_character_ else result$system_fingerprint,
+      temperature        = temperature,
+      max_tokens         = max_tokens,
+      timestamp_utc      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+      paper_id           = paper_id
+    )
     attr(claims_df, "study_summary") <- tryCatch({
       parsed <- jsonlite::fromJSON(raw_json, simplifyVector = FALSE)
       parsed$study_summary
