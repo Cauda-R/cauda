@@ -1,0 +1,7 @@
+"X","Y","Z","entailed_by","n_entail","discriminating","r","p","n","k","p_holm","reject","min_detectable_r_80"
+"C","L","","G1_substitution;G2_independent_fentanyl;G3_background_only;G4_direct",4,FALSE,0.189069683705672,0.183922269480305,51,0,NA,FALSE,0.456805160116124
+"S","P","C,H,L","G1_substitution;G2_independent_fentanyl;G3_background_only",3,TRUE,0.317958669068161,0.0276429466610579,51,3,0.0829288399831736,FALSE,0.469511446718467
+"P","S","C,L","G2_independent_fentanyl;G3_background_only",2,TRUE,0.198792246120553,0.170894952168607,51,2,0.341789904337215,FALSE,0.465159643745226
+"S","H","C,L","G2_independent_fentanyl;G3_background_only",2,TRUE,0.838546542508712,5.50367669068788e-14,51,2,2.20147067627515e-13,TRUE,0.465159643745226
+"H","S","C,L,P","G2_independent_fentanyl;G3_background_only;G4_direct",3,TRUE,0.849818561186538,2.19584923287431e-14,51,3,1.09792461643715e-13,TRUE,0.469511446718467
+"H","P","C,L","G3_background_only",1,TRUE,0.030576517416789,0.834792580367367,51,2,0.834792580367367,FALSE,0.465159643745226

@@ -1,0 +1,56 @@
+"variant","G1_substitution","G2_independent_fentanyl","G3_background_only","G4_direct","n"
+"primary","not contradicted","contradicted","contradicted","contradicted",51
+"Spearman (ranks)","not contradicted","contradicted","contradicted","contradicted",51
+"plus Census-region indicators","contradicted","contradicted","contradicted","contradicted",51
+"drop California, Texas, New York","not contradicted","contradicted","contradicted","contradicted",48
+"LOO Alabama","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Alaska","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Arizona","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Arkansas","not contradicted","contradicted","contradicted","contradicted",50
+"LOO California","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Colorado","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Connecticut","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Delaware","not contradicted","contradicted","contradicted","contradicted",50
+"LOO District of Columbia","contradicted","contradicted","contradicted","contradicted",50
+"LOO Florida","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Georgia","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Hawaii","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Idaho","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Illinois","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Indiana","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Iowa","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Kansas","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Kentucky","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Louisiana","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Maine","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Maryland","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Massachusetts","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Michigan","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Minnesota","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Mississippi","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Missouri","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Montana","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Nebraska","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Nevada","contradicted","contradicted","contradicted","contradicted",50
+"LOO New Hampshire","not contradicted","contradicted","contradicted","contradicted",50
+"LOO New Jersey","not contradicted","contradicted","contradicted","contradicted",50
+"LOO New Mexico","not contradicted","contradicted","contradicted","contradicted",50
+"LOO New York","not contradicted","contradicted","contradicted","contradicted",50
+"LOO North Carolina","not contradicted","contradicted","contradicted","contradicted",50
+"LOO North Dakota","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Ohio","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Oklahoma","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Oregon","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Pennsylvania","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Rhode Island","not contradicted","contradicted","contradicted","contradicted",50
+"LOO South Carolina","not contradicted","contradicted","contradicted","contradicted",50
+"LOO South Dakota","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Tennessee","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Texas","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Utah","contradicted","contradicted","contradicted","contradicted",50
+"LOO Vermont","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Virginia","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Washington","not contradicted","contradicted","contradicted","contradicted",50
+"LOO West Virginia","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Wisconsin","not contradicted","contradicted","contradicted","contradicted",50
+"LOO Wyoming","not contradicted","contradicted","contradicted","contradicted",50

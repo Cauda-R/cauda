@@ -1,0 +1,9 @@
+spec,test,Pearson,Spearman,Log1p-Pearson,Region-adjusted,LOO r range,LOO flips
+raw,Heroin_|_Nat/semi|Pills,0.34 (n.s.),0.60 (V),0.50 (V),0.40 (V),0.28 to 0.50,3/48
+raw,Synth_|_Heroin,0.72 (V),0.84 (V),0.85 (V),0.71 (V),0.68 to 0.77,0/48
+raw,Synth_|_Nat/semi,0.91 (V),0.87 (V),0.90 (V),0.92 (V),0.88 to 0.92,0/48
+raw,Synth_|_Pills,0.90 (V),0.88 (V),0.87 (V),0.91 (V),0.85 to 0.94,0/48
+rate,Heroin_|_Nat/semi|Pills,0.57 (V),0.49 (V),0.52 (V),0.57 (V),0.43 to 0.62,0/48
+rate,Synth_|_Heroin,0.69 (V),0.53 (V),0.58 (V),0.69 (V),0.61 to 0.72,0/48
+rate,Synth_|_Nat/semi,0.48 (V),0.39 (V),0.45 (V),0.49 (V),0.31 to 0.54,1/48
+rate,Synth_|_Pills,0.28 (n.s.),0.27 (n.s.),0.26 (n.s.),0.23 (n.s.),0.13 to 0.45,1/48
