@@ -11,6 +11,8 @@ Description: Two independent toolkits for causal analysis. The first
     implications against a real dataset. The second learns a causal DAG
     directly from a tabular data frame, alongside correlation networks,
     partial dependence plots, and decision optimization.
+URL: https://github.com/Cauda-R/cauda
+BugReports: https://github.com/Cauda-R/cauda/issues
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
