@@ -42,7 +42,7 @@ library(cauda)
 
 The fastest way to get a full analysis is with a single command:
 
-```{r quickstart}
+```{r quickstart, eval = FALSE}
 library(cauda)
 
 # Load any data frame
@@ -64,7 +64,7 @@ We demonstrate cauda using the **TelcoChurn** dataset, which contains customer i
 
 Before doing anything, inspect the raw data:
 
-```{r missing}
+```{r missing, eval = FALSE}
 df <- read.csv("TelcoChurn.csv", stringsAsFactors = FALSE)
 cauda.missing(df)
 ```
@@ -75,7 +75,7 @@ This prints a table showing how many missing values each variable has and flags 
 
 `cauda.prep()` handles all data wrangling automatically:
 
-```{r prep}
+```{r prep, eval = FALSE}
 df_ready <- cauda.prep(df)
 ```
 
@@ -89,7 +89,7 @@ Under the hood this:
 
 ### Step 3 — Learn a causal network
 
-```{r dag}
+```{r dag, eval = FALSE}
 dag <- cauda.dag(df_ready, highlight = "Churn")
 ```
 
@@ -99,7 +99,7 @@ This uses the Hill-Climbing algorithm from `bnlearn` to automatically discover a
 
 The automatically discovered DAG can be refined using domain knowledge:
 
-```{r edit}
+```{r edit, eval = FALSE}
 # Remove an arrow that doesn't make causal sense
 dag <- cauda.delete(dag, "Churn", "VoiceMailPlan", highlight = "Churn")
 
@@ -116,7 +116,7 @@ Each command replots the DAG automatically so you can see the change.
 
 View pairwise and partial correlations side by side:
 
-```{r corr}
+```{r corr, eval = FALSE}
 # Full correlation heatmap + spring network
 cauda.corr(df_ready, highlight = "Churn")
 
@@ -130,7 +130,7 @@ Partial correlations are particularly useful — they show the relationship betw
 
 Run multiple causal discovery algorithms and see where they agree:
 
-```{r consensus}
+```{r consensus, eval = FALSE}
 cauda.consensus(df_ready, highlight = "Churn")
 ```
 
@@ -140,7 +140,7 @@ Thicker, darker arrows indicate more algorithms agreed on that dependency. This 
 
 Use partial dependence plots to see how individual features affect the outcome:
 
-```{r pdp}
+```{r pdp, eval = FALSE}
 # How does tenure affect churn probability?
 cauda.pdp(df_ready, target = "Churn", feature = "tenure", method = "pdp")
 
@@ -155,7 +155,7 @@ cauda.pdp2d(df_ready, target = "Churn", feature1 = "tenure", feature2 = "Contrac
 
 Test which variables are genuinely dependent on the target after controlling for everything else:
 
-```{r independence}
+```{r independence, eval = FALSE}
 cauda.independence(df_ready, target = "Churn")
 ```
 
@@ -165,7 +165,7 @@ A low p-value means the variable is genuinely associated with Churn even after c
 
 Find the optimal settings for controllable variables to minimize or maximize an outcome:
 
-```{r optimize}
+```{r optimize, eval = FALSE}
 cauda.optimize(
   df_ready,
   target     = "Churn",
