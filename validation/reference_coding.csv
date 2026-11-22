@@ -1,0 +1,15 @@
+ref,theory,reference_relationship,best_claim_row_0indexed,source_match,target_match,outcome,chain_shifted
+A1,A,triplicate -> OxyContin distribution,0,exact,exact,both_exact,no
+A2,A,OxyContin distribution -> overdose deaths,3,shifted (introduction and marketing),exact,partial,no
+A3,A,early exposure -> later-era deaths,4,shifted (not early),shifted (dependence/illicit use),partial,yes
+B1,B,labor-market -> cumulative disadvantage,12,shifted (adds social policies),exact,partial,no
+B2,B,cumulative disadvantage -> chronic pain/disability,,,,missed,
+B3,B,chronic pain/disability -> opioid exposure,,,,missed,
+B4,B,cumulative disadvantage -> deaths of despair,10,exact,shifted (all mortality),partial,no
+C1,C,reformulation -> OxyContin misuse,13,exact,shifted (heroin deaths),partial,yes
+C2,C,misuse reduction -> heroin deaths,13,shifted (reformulation),exact,partial,yes
+C3,C,misuse reduction -> synthetic deaths,,,,missed,
+C4,C,heroin+fentanyl substitution -> little net reduction,17,shifted,shifted,partial,yes
+D1,D,imports -> fentanyl smuggling,21,shifted (smuggling via imports),shifted (opioid problems),partial,yes
+D2,D,smuggling -> fentanyl deaths,20,shifted (imports),exact,partial,yes
+D3,D,robustness vs Theory B despair,,,,missed,
